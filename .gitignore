@@ -1,0 +1,25 @@
+# Local environments and secrets
+.venv/
+.env
+.env.*
+
+# Python/build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+*.ses
+
+# Editor/tool caches
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+
+# Local agent configuration
+.agents/
+.codex/
+.aws/
