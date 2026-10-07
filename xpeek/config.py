@@ -1,4 +1,4 @@
-"""Persistent configuration for the screen OCR translator.
+"""Persistent configuration for xpeek.
 
 Config lives at $XDG_CONFIG_HOME/xpeek/config.json
 (falls back to ~/.config/xpeek/config.json).
@@ -38,6 +38,10 @@ CONFIG_PATH = _config_dir() / "config.json"
 HISTORY_PATH = _data_dir() / "history.json"
 
 
+class ConfigError(RuntimeError):
+    """Raised when user configuration is missing or invalid."""
+
+
 @dataclass
 class Region:
     x: int
@@ -67,26 +71,31 @@ class Config:
     region: Optional[Region] = None
     history_limit: int = 100
     provider: str = "google"
-    source_lang: str = "en"
-    target_lang: str = "vi"
-    overlay_enabled: bool = False
-    ocr_lang: str = "en"
-    # Free-form per-provider options, e.g. {"deepl": {"api_key": "..."}, "ollama": {"model": "llama3.1", "host": "http://localhost:11434"}}
+    source_lang: str = "auto"
+    target_lang: str = "en"
+    # Per-provider settings such as models and hosts; keys can come from .env.
     provider_options: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path = CONFIG_PATH) -> "Config":
         if not path.exists():
-            return cls()
+            raise ConfigError(
+                f"Config file not found: {path}. Run `python3 setup.py install` first."
+            )
         try:
             raw = json.loads(path.read_text())
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Config file at {path} is corrupted: {exc}") from exc
+            raise ConfigError(f"Config file at {path} is corrupted: {exc}") from exc
 
-        region_raw = raw.pop("region", None)
-        region = Region(**region_raw) if region_raw else None
-        cfg = cls(region=region, **raw)
-        return cfg
+        # Accept older configs but drop settings that never affected behavior.
+        try:
+            raw.pop("ocr_lang", None)
+            raw.pop("overlay_enabled", None)
+            region_raw = raw.pop("region", None)
+            region = Region(**region_raw) if region_raw else None
+            return cls(region=region, **raw)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ConfigError(f"Invalid config file at {path}: {exc}") from exc
 
     def save(self, path: Path = CONFIG_PATH) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

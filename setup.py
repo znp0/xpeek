@@ -11,6 +11,9 @@ import subprocess
 import sys
 import tempfile
 import venv
+from dataclasses import asdict
+
+from xpeek.config import Config, CONFIG_PATH
 
 PROJECT_DIR = Path(__file__).resolve().parent
 VENV_DIR = PROJECT_DIR / ".venv"
@@ -33,20 +36,59 @@ def matching_link() -> bool:
     return LINK.is_symlink() and LINK.readlink() == EXECUTABLE
 
 
-def uninstall() -> None:
+def create_config(state: dict) -> bool:
+    """Write initial settings once, preserving existing user configuration."""
+    state["config_path"] = str(CONFIG_PATH)
+    if CONFIG_PATH.exists() or CONFIG_PATH.is_symlink():
+        MARKER.write_text(json.dumps(state, indent=2) + "\n")
+        return False
+    missing_dirs = []
+    directory = CONFIG_PATH.parent
+    while not directory.exists():
+        missing_dirs.append(str(directory))
+        directory = directory.parent
+    state["created_dirs"] = list(dict.fromkeys(state["created_dirs"] + missing_dirs))
+    MARKER.write_text(json.dumps(state, indent=2) + "\n")
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(CONFIG_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return False
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(asdict(Config()), handle, indent=2)
+            handle.write("\n")
+    except Exception:
+        CONFIG_PATH.unlink(missing_ok=True)
+        raise
+    return True
+
+
+def uninstall(remove_config: bool = False) -> None:
+    state = {"created_dirs": [], "config_path": str(CONFIG_PATH)}
     if not VENV_DIR.exists() and not VENV_DIR.is_symlink():
         print("xpeek is not installed by this setup script.")
-        return
-    state = read_state()
-    if matching_link():
-        LINK.unlink()
-    shutil.rmtree(VENV_DIR)
+    else:
+        state = read_state()
+        if matching_link():
+            LINK.unlink()
+        shutil.rmtree(VENV_DIR)
+    if remove_config:
+        config_path = Path(state.get("config_path", str(CONFIG_PATH)))
+        config_path.unlink(missing_ok=True)
+        try:
+            config_path.parent.rmdir()
+        except OSError:
+            pass
     for directory in state["created_dirs"]:
         try:
             Path(directory).rmdir()
         except OSError:
             pass  # Keep directories that now contain other files.
-    print("Uninstalled xpeek. User configuration and history were preserved.")
+    print("Uninstalled xpeek. " + (
+        "Configuration removed; history preserved."
+        if remove_config else "Configuration and history preserved."
+    ))
 
 
 def install() -> None:
@@ -59,6 +101,7 @@ def install() -> None:
     state = read_state() if existing else {
         "project": str(PROJECT_DIR), "link": str(LINK), "created_dirs": [],
     }
+    config_created = False
     try:
         if not existing:
             print("Creating virtual environment...", flush=True)
@@ -92,15 +135,17 @@ def install() -> None:
         BIN_DIR.mkdir(parents=True, exist_ok=True)
         if not matching_link():
             LINK.symlink_to(EXECUTABLE)
+        config_created = create_config(state)
     except Exception:
         if not existing:
             if MARKER.is_file():
-                uninstall()
+                uninstall(remove_config=config_created)
             elif VENV_DIR.is_dir():
                 shutil.rmtree(VENV_DIR)
         raise
 
     print(f"Installed xpeek: {LINK}")
+    print(f"Config {'created' if config_created else 'preserved'}: {CONFIG_PATH}")
     if str(BIN_DIR) not in os.environ.get("PATH", "").split(os.pathsep):
         print('Add ~/.local/bin to your PATH: export PATH="$HOME/.local/bin:$PATH"')
     missing_tools = [name for name in ("grim", "slurp", "wl-copy") if not shutil.which(name)]
@@ -111,12 +156,27 @@ def install() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Install or uninstall xpeek for this user.")
-    parser.add_argument("command", choices=("install", "uninstall"))
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("install", help="Install xpeek and create config if missing")
+    uninstall_parser = commands.add_parser("uninstall", help="Uninstall xpeek; keep config by default")
+    config_options = uninstall_parser.add_mutually_exclusive_group()
+    config_options.add_argument(
+        "--keep-config", dest="remove_config", action="store_false",
+        help="Keep user configuration (default)",
+    )
+    config_options.add_argument(
+        "--remove-config", dest="remove_config", action="store_true",
+        help="Also remove the user config.json; keep translation history",
+    )
+    uninstall_parser.set_defaults(remove_config=False)
     args = parser.parse_args(argv)
     if sys.version_info < (3, 10):
         parser.error("Python 3.10 or newer is required")
     try:
-        {"install": install, "uninstall": uninstall}[args.command]()
+        if args.command == "install":
+            install()
+        else:
+            uninstall(remove_config=args.remove_config)
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

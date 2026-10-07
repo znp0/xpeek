@@ -17,11 +17,15 @@ from pathlib import Path
 
 from .capture import CaptureError, capture_region, select_region
 from .clipboard import ClipboardError, copy_text
-from .config import Config, CONFIG_PATH, Region
+from .config import Config, ConfigError, CONFIG_PATH, Region
 from .history import HistoryStore
 from .notifications import notify_clipboard_copied
 from .ocr import OcrError, extract_text
 from .providers import PROVIDERS
+
+
+def _source_language(value: str) -> str:
+    return "auto" if value.lower() in ("auto", "detect") else value
 
 
 def cmd_select(args: argparse.Namespace) -> int:
@@ -71,6 +75,11 @@ def cmd_translate(args: argparse.Namespace) -> int:
 
     if args.provider is not None:
         config.provider = args.provider
+    if args.source_lang is not None:
+        config.source_lang = args.source_lang
+    config.source_lang = _source_language(config.source_lang)
+    if args.target_lang is not None:
+        config.target_lang = args.target_lang
 
     pid_file.write_text(str(os.getpid()))
     try:
@@ -98,7 +107,7 @@ def _ocr_to_clipboard(config: Config, region: Region) -> int:
     try:
         image_path = capture_region(region)
         try:
-            text = extract_text(image_path, lang=config.ocr_lang)
+            text = extract_text(image_path)
         finally:
             image_path.unlink(missing_ok=True)
         if not text.strip():
@@ -145,8 +154,8 @@ def cmd_history(args: argparse.Namespace) -> int:
 
     for entry in entries:
         print(f"[{entry.timestamp}]")
-        print(f"  EN: {entry.ocr_text}")
-        print(f"  VI: {entry.translation}")
+        print(f"  OCR: {entry.ocr_text}")
+        print(f"  Translation: {entry.translation}")
         print()
     return 0
 
@@ -169,10 +178,14 @@ def build_parser() -> argparse.ArgumentParser:
             "translate options (place after translate):\n"
             "  -p, --provider {" + ",".join(provider_choices) + "}\n"
             "                        Override the configured provider without saving;\n"
-            "                        clipboard copies OCR text without translation.\n\n"
+            "                        clipboard copies OCR text without translation.\n"
+            "  -s, --source-lang CODE Source language; auto/detect requests detection.\n"
+            "  -t, --target-lang CODE Target language for translation (configured default).\n\n"
             "Examples:\n"
             "  xpeek translate --provider ollama\n"
             "  xpeek translate -p gemini\n"
+            "  xpeek translate --source-lang en --target-lang ja\n"
+            "  xpeek translate -s auto -t vi\n"
             "  xpeek translate --provider=clipboard\n"
             "  xpeek ocr\n\n"
             "Use translate --help for provider options and window behavior."
@@ -189,7 +202,9 @@ def build_parser() -> argparse.ArgumentParser:
             "If a window already exists, close it and exit regardless of provider.\n"
             "Otherwise capture the saved region, run OCR, and translate it with\n"
             "the selected provider. With clipboard, copy the OCR text without\n"
-            "translation or opening a window."
+            "translation or opening a window.\n\n"
+            "Language codes depend on the provider. Language flags affect translation\n"
+            "only; they do not change the bundled OCR recognition model."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -197,6 +212,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  xpeek translate                 # configured default\n"
             "  xpeek translate --provider ollama\n"
             "  xpeek translate -p gemini\n"
+            "  xpeek translate -s en -t ja\n"
+            "  xpeek translate -s auto -t vi\n"
             "  xpeek translate --provider=clipboard\n\n"
             "Use xpeek ocr to select a temporary region and copy its text."
         ),
@@ -207,6 +224,17 @@ def build_parser() -> argparse.ArgumentParser:
             "Override the configured provider without saving; "
             "clipboard copies OCR text without translation"
         ),
+    )
+    p_translate.add_argument(
+        "-s", "--source-lang", metavar="CODE", type=_source_language, default=None,
+        help=(
+            "Source language, e.g. en, or auto/detect for automatic detection; "
+            "defaults to config (initially auto)"
+        ),
+    )
+    p_translate.add_argument(
+        "-t", "--target-lang", metavar="CODE", default=None,
+        help="Target language for translation, e.g. ja; defaults to config (initially en)",
     )
     p_translate.set_defaults(func=cmd_translate)
 
@@ -241,7 +269,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except ConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

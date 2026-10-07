@@ -2,16 +2,10 @@
   "region": null,
   "history_limit": 100,
   "provider": "google",
-  "source_lang": "en",
-  "target_lang": "vi",
-  "overlay_enabled": false,
-  "ocr_lang": "en",
+  "source_lang": "auto",
+  "target_lang": "en",
   "provider_options": {
-    "deepl": {
-      "api_key": ""
-    },
     "openai": {
-      "api_key": "",
       "model": "gpt-4o-mini"
     },
     "ollama": {
@@ -19,7 +13,6 @@
       "model": "llama3.1"
     },
     "gemini": {
-      "api_key": "",
       "model": "gemini-3.1-flash-lite"
     }
   }

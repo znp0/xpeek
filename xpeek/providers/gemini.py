@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from .base import Translator, TranslationError
+from .base import Translator, TranslationError, translation_instruction
 
 _LANG_NAMES = {
     "en": "English",
@@ -32,8 +32,8 @@ class GeminiTranslator(Translator):
         tgt_name = _LANG_NAMES.get(target_lang, target_lang)
 
         prompt = (
-            f"Translate the following {src_name} text to {tgt_name}. "
-            "Reply with ONLY the translation, no commentary, no markdown, no quotes.\n\n"
+            translation_instruction(src_name, tgt_name)
+            + "Reply with ONLY the translation, no commentary, no markdown, no quotes.\n\n"
             f"{text}"
         )
 

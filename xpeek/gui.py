@@ -31,7 +31,7 @@ class TranslationWorker(QThread):
             return
 
         try:
-            ocr_text = extract_text(image_path, lang=self.config.ocr_lang)
+            ocr_text = extract_text(image_path)
         except OcrError as exc:
             self.finished_signal.emit(f"OCR error: {exc}", "", "")
             return

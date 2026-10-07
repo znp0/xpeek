@@ -28,11 +28,16 @@ class DeepLTranslator(Translator):
             ) from exc
 
         try:
-            result = _DT(
+            translator = _DT(
                 api_key=self.api_key,
                 source=source_lang,
                 target=target_lang,
-            ).translate(text)
+            )
+            if source_lang == "auto":
+                # Requests omits None-valued parameters; DeepL detects the
+                # source language when source_lang is absent.
+                translator.source = None
+            result = translator.translate(text)
         except Exception as exc:
             raise TranslationError(f"DeepL request failed: {exc}") from exc
 

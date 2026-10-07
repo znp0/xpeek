@@ -1,7 +1,6 @@
 """OCR via RapidOCR (PaddleOCR ONNX Runtime)."""
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 try:
@@ -41,7 +40,7 @@ def get_ocr_instance() -> RapidOCR:
     return _OCR_INSTANCE
 
 
-def extract_text(image_path: Path, lang: str = "en") -> str:
+def extract_text(image_path: Path) -> str:
     """Run RapidOCR on the given image and return extracted text.
     """
     try:

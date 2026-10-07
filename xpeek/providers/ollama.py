@@ -1,7 +1,7 @@
 """Translation via a local Ollama server (no API key, no cloud dependency)."""
 from __future__ import annotations
 
-from .base import Translator, TranslationError
+from .base import Translator, TranslationError, translation_instruction
 
 _LANG_NAMES = {
     "en": "English",
@@ -32,8 +32,8 @@ class OllamaTranslator(Translator):
         src_name = _LANG_NAMES.get(source_lang, source_lang)
         tgt_name = _LANG_NAMES.get(target_lang, target_lang)
         prompt = (
-            f"Translate the following {src_name} text to {tgt_name}. "
-            "Reply with only the translation, no commentary, no quotes.\n\n"
+            translation_instruction(src_name, tgt_name)
+            + "Reply with only the translation, no commentary, no quotes.\n\n"
             f"{text}"
         )
 
