@@ -8,7 +8,7 @@ Requires Python 3.10+, GTK4, PyGObject, `grim`, `slurp`, and `wl-copy`.
 Install `gtk4-layer-shell` for an independently positioned popup. OCR uses bundled
 RapidOCR/ONNX models; Tesseract and language packs are not required.
 
-On Arch/CachyOS:
+On Arch:
 
 ```bash
 sudo pacman -S python python-pip python-gobject gtk4 gtk4-layer-shell grim slurp wl-clipboard
@@ -67,7 +67,8 @@ Selection dims the live screen while keeping the selected area clear. Drag to
 select, release to finish, or press Escape to cancel.
 
 On niri and other layer-shell desktops, the popup needs no window rules. Drag
-its header to move it, resize from an edge or corner, and close with the button
+its header to move it between monitors; on release it fits within that monitor.
+Resize from an edge or corner, and close with the button
 or Escape when focused. It remembers its output, position, and size in
 `~/.local/state/xpeek/window-state.json` (respects `XDG_STATE_HOME`). Delete this
 file to reset placement. Without layer-shell, a normal GTK window restores its

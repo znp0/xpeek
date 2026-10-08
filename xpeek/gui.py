@@ -16,6 +16,7 @@ except OSError:
 
 os.environ.setdefault("GDK_BACKEND", "wayland")
 try:
+    import cairo
     import gi
     gi.require_version("Gtk", "4.0")
     gi.require_version("Gdk", "4.0")
@@ -71,6 +72,39 @@ def translation_result(config: Config) -> tuple[str, str, str]:
         return f"Error: {exc}", original, ""
 
 
+class DragPreview(Gtk.Window):
+    """Draw the moving popup on one output without taking pointer input."""
+
+    def __init__(self, owner, monitor, x, y):
+        super().__init__(application=owner.app, title="xpeek")
+        self.set_decorated(False)
+        self.set_focusable(False)
+        self.add_css_class("xpeek")
+        self.set_default_size(owner.drag_origin.width, owner.drag_origin.height)
+        LayerShell.init_for_window(self)
+        LayerShell.set_namespace(self, "xpeek-drag")
+        LayerShell.set_layer(self, LayerShell.Layer.OVERLAY)
+        LayerShell.set_exclusive_zone(self, -1)
+        LayerShell.set_keyboard_mode(self, LayerShell.KeyboardMode.NONE)
+        LayerShell.set_monitor(self, monitor)
+        LayerShell.set_anchor(self, LayerShell.Edge.TOP, True)
+        LayerShell.set_anchor(self, LayerShell.Edge.LEFT, True)
+        self.set_child(Gtk.Picture(
+            paintable=Gtk.WidgetPaintable.new(owner.get_child()), can_shrink=True))
+        self.connect("realize", self._ignore_pointer)
+        self.connect("map", self._ignore_pointer)
+        self.move_to(x, y)
+        self.present()
+
+    def _ignore_pointer(self, _window):
+        self.get_surface().set_input_region(cairo.Region())
+
+    def move_to(self, x, y):
+        # Negative margins let the preview straddle a monitor boundary.
+        LayerShell.set_margin(self, LayerShell.Edge.LEFT, x)
+        LayerShell.set_margin(self, LayerShell.Edge.TOP, y)
+
+
 class OverlayWindow(Gtk.ApplicationWindow):
     def __init__(self, app: Gtk.Application, config: Config, mode: str):
         super().__init__(application=app, title="xpeek")
@@ -81,6 +115,10 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.worker = None
         self.save_source = None
         self.drag_origin = None
+        self.drag_previews = {}
+        self.drag_position = None
+        self.drag_target = None
+        self.drag_finish_source = None
         self.monitor = None
         self.monitor_handler = None
         self.output_bounds = {}
@@ -235,6 +273,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
         bounds = self.monitor.get_geometry()
         if bounds.width <= 0 or bounds.height <= 0 or self.monitor not in list(self.monitors):
             return
+        if self.drag_origin is not None:
+            self._drag_cancel(None, None)
         self.state.clamp(bounds.width, bounds.height)
         self._remember_outputs()
         self._apply_geometry()
@@ -243,6 +283,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
     def _outputs_changed(self, *_args):
         if self.closed or not self.layer:
             return
+        if self.drag_origin is not None:
+            self._drag_cancel(None, None)
         monitors = list(self.monitors)
         if monitors and self.monitor not in monitors:
             old_bounds = self.output_bounds.get(self.monitor)
@@ -298,8 +340,11 @@ class OverlayWindow(Gtk.ApplicationWindow):
                                          event.get_device(), 1, sx, sy, event.get_time())
             return
         self.drag_origin = replace(self.state)
+        bounds = self.monitor.get_geometry()
+        self.drag_output_origin = (bounds.x, bounds.y)
         event = gesture.get_current_event() if gesture is not None else None
         self.drag_press = event.get_position()[1:] if event is not None else None
+        self.drag_pointer = self.drag_press or (x, y)
 
     def _drag_update(self, gesture, dx, dy, edge):
         if self.drag_origin is None or not self.layer or self.monitor is None:
@@ -314,8 +359,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
         # starting geometry; adding previous movement makes the popup run away.
         bounds = self.monitor.get_geometry()
         if edge == "move":
-            self.state.x = round((origin.x or 0) + dx)
-            self.state.y = round(origin.y + dy)
+            self._move_drag(dx, dy)
+            return
         else:
             left, top = origin.x or 0, origin.y
             right, bottom = left + origin.width, top + origin.height
@@ -332,13 +377,82 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.state.clamp(bounds.width, bounds.height)
         self._apply_geometry()
 
+    def _move_drag(self, dx, dy):
+        origin = self.drag_origin
+        ox, oy = self.drag_output_origin
+        x = round(ox + (origin.x or 0) + dx)
+        y = round(oy + origin.y + dy)
+        px, py = x + self.drag_pointer[0], y + self.drag_pointer[1]
+        self.drag_position = (x, y)
+        self.drag_target = self.drag_target or self.monitor
+        visible = set()
+        targets = []
+        for monitor in self.monitors:
+            bounds = monitor.get_geometry()
+            if bounds.width <= 0 or bounds.height <= 0:
+                continue
+            if (bounds.x <= px < bounds.x + bounds.width and
+                    bounds.y <= py < bounds.y + bounds.height):
+                targets.append(monitor)
+            if (x < bounds.x + bounds.width and x + origin.width > bounds.x and
+                    y < bounds.y + bounds.height and y + origin.height > bounds.y):
+                visible.add(monitor)
+                left, top = x - bounds.x, y - bounds.y
+                if monitor in self.drag_previews:
+                    self.drag_previews[monitor].move_to(left, top)
+                else:
+                    self.drag_previews[monitor] = DragPreview(self, monitor, left, top)
+        if targets and self.drag_target not in targets:
+            self.drag_target = targets[0]
+        for monitor in list(self.drag_previews):
+            if monitor not in visible:
+                self.drag_previews.pop(monitor).destroy()
+        # Keep the pressed surface stationary and mapped, preserving its grab
+        # and the coordinate origin until release, even across output boundaries.
+        if self.drag_previews:
+            self.set_opacity(0)
+
+    def _clear_drag_previews(self):
+        previews, self.drag_previews = self.drag_previews, {}
+        self.drag_position = None
+        self.drag_target = None
+        for preview in previews.values():
+            preview.destroy()
+        self.set_opacity(1)
+
     def _drag_end(self, _gesture, _dx, _dy):
+        if self.drag_origin is None:
+            return
         self.drag_origin = None
+        # GTK still dispatches the release event after this callback. Remapping
+        # or destroying surfaces here invalidates the widgets it is processing.
+        self.drag_finish_source = GLib.idle_add(
+            self._finish_drag, self.drag_position, self.drag_target)
+
+    def _finish_drag(self, position, target):
+        self.drag_finish_source = None
+        if self.closed:
+            return GLib.SOURCE_REMOVE
+        self._clear_drag_previews()
+        if position is not None and target in list(self.monitors):
+            bounds = target.get_geometry()
+            self.state.x, self.state.y = position[0] - bounds.x, position[1] - bounds.y
+            self.state.clamp(bounds.width, bounds.height)
+            self.state.output = target.get_connector()
+            changing_output = target != self.monitor
+            self._watch_monitor(target)
+            self._apply_geometry()
+            # Remapping only after release leaves the pointer grab intact.
+            if changing_output:
+                LayerShell.set_monitor(self, target)
         self._queue_save()
+        return GLib.SOURCE_REMOVE
 
     def _drag_cancel(self, _gesture, _sequence):
+        if self.drag_origin is None:
+            return
         self.drag_origin = None
-        self._queue_save()
+        self.drag_finish_source = GLib.idle_add(self._finish_drag, None, None)
 
     def _tick(self, _widget, _clock):
         if self.closed:
@@ -390,6 +504,11 @@ class OverlayWindow(Gtk.ApplicationWindow):
         if self.closed:
             return
         self.closed = True
+        self.drag_origin = None
+        if self.drag_finish_source is not None:
+            GLib.source_remove(self.drag_finish_source)
+            self.drag_finish_source = None
+        self._clear_drag_previews()
         if self.save_source is not None:
             GLib.source_remove(self.save_source)
         self._save_geometry()
