@@ -125,31 +125,6 @@ else:
     return result.stdout.strip() == "layer-shell"
 
 
-def remove_old_qt() -> None:
-    """Remove only Qt distributions installed inside this managed environment."""
-    result = subprocess.run(
-        [str(VENV_DIR / "bin" / "python"), "-c", """
-from importlib.metadata import distribution, PackageNotFoundError
-from pathlib import Path
-import sys
-root = Path(sys.prefix).resolve()
-for name in ('PySide6', 'PySide6_Addons', 'PySide6_Essentials', 'shiboken6'):
-    try:
-        package = distribution(name)
-    except PackageNotFoundError:
-        continue
-    if Path(package.locate_file('')).resolve().is_relative_to(root):
-        print(name)
-"""], check=True, capture_output=True, text=True,
-    )
-    packages = result.stdout.splitlines()
-    if packages:
-        subprocess.run(
-            [str(VENV_DIR / "bin" / "python"), "-m", "pip", "uninstall", "-y", *packages],
-            check=True,
-        )
-
-
 def install() -> None:
     if sys.platform != "linux":
         raise RuntimeError("xpeek currently requires Linux and a Wayland desktop.")
@@ -166,7 +141,7 @@ def install() -> None:
     try:
         print("Updating virtual environment..." if existing else "Creating virtual environment...",
               flush=True)
-        # Reconfigure older isolated environments to see distro PyGObject.
+        # Use distro PyGObject bindings in the managed environment.
         venv.EnvBuilder(with_pip=True, system_site_packages=True).create(VENV_DIR)
         MARKER.write_text(json.dumps(state, indent=2) + "\n")
 
@@ -186,8 +161,6 @@ def install() -> None:
                  "--upgrade", f"{source}[all]"],
                 check=True,
             )
-        remove_old_qt()
-
         missing_dirs = []
         directory = BIN_DIR
         while not directory.exists():

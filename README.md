@@ -18,7 +18,7 @@ cd xpeek
 python3 setup.py install
 ```
 
-The installer creates `.venv` with access to distro GTK bindings, installs Python/provider dependencies, links `~/.local/bin/xpeek`, and creates `~/.config/xpeek/config.json` if missing. Use your distro's Python; setup needs no `sudo`. Reinstall also migrates older Qt installations. Keep the checkout in place and rerun `python3 setup.py install` after updates. If `xpeek` is not found, add `~/.local/bin` to your PATH:
+The installer creates `.venv` with access to distro GTK bindings, installs Python/provider dependencies, links `~/.local/bin/xpeek`, and creates `~/.config/xpeek/config.json` if missing. Use your distro's Python; setup needs no `sudo`. Keep the checkout in place and rerun `python3 setup.py install` after updates. If `xpeek` is not found, add `~/.local/bin` to your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -66,7 +66,7 @@ If the popup's monitor disconnects, it temporarily moves to the nearest remainin
 
 Config: `~/.config/xpeek/config.json`. History: `~/.local/share/xpeek/history.json`. Both respect `XDG_CONFIG_HOME` / `XDG_DATA_HOME`. Setup creates the config; `xpeek select` saves the region into it. Edit it using [config.example.json](config.example.json) as a reference. Set `provider`, `source_lang`, `target_lang`, `history_limit`, and per-provider models/hosts in `provider_options`.
 
-The installed config starts with `source_lang: "auto"`, `target_lang: "en"`, and empty `provider_options`. xpeek reads this file; if it is missing, rerun `python3 setup.py install`. Reinstall preserves existing configuration. The example illustrates optional provider settings and is not loaded automatically. Obsolete `ocr_lang` and `overlay_enabled` fields in older configs are ignored and removed when the config is next saved.
+The installed config starts with `source_lang: "auto"`, `target_lang: "en"`, and empty `provider_options`. xpeek reads this file; if it is missing, rerun `python3 setup.py install`. Reinstall preserves existing configuration. The example illustrates optional provider settings and is not loaded automatically.
 
 Providers: `google` (no key), `deepl`, `openai`, `gemini`, and `ollama` (local server). `-p` / `--provider` overrides the saved provider without saving it; `clipboard` skips translation.
 
