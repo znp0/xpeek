@@ -32,16 +32,18 @@ class WindowState:
         try:
             raw = json.loads(path.read_text())
             state = cls(**raw)
-            for key in ("width", "height", "persistent_height", "y"):
+            for key in ("width", "height", "persistent_height"):
                 value = getattr(state, key)
                 if type(value) is not int or not 0 <= value <= 2**31 - 1:
                     raise ValueError("Invalid geometry")
             if state.width == 0 or state.height == 0 or state.persistent_height == 0:
                 raise ValueError("Invalid size")
-            if state.x is not None and (
-                type(state.x) is not int or not 0 <= state.x <= 2**31 - 1
-            ):
-                raise ValueError("Invalid position")
+            for key in ("x", "y"):
+                value = getattr(state, key)
+                if key == "x" and value is None:
+                    continue
+                if type(value) is not int or abs(value) > 2**31 - 1:
+                    raise ValueError("Invalid position")
             if state.output is not None and not isinstance(state.output, str):
                 raise ValueError("Invalid output")
             if not isinstance(state.output_layout, dict):
@@ -67,6 +69,30 @@ class WindowState:
         x = width - self.width - 24 if self.x is None else self.x
         self.x = max(0, min(x, width - self.width))
         self.y = max(0, min(self.y, height - self.height))
+
+    def fit_desktop(self, layout: dict[str, tuple[int, int, int, int]]) -> None:
+        """Preserve a drop across adjacent outputs, keeping the header reachable."""
+        home = layout.get(self.output)
+        if home is None:
+            return
+        left = min(rect[0] for rect in layout.values())
+        top = min(rect[1] for rect in layout.values())
+        right = max(rect[0] + rect[2] for rect in layout.values())
+        bottom = max(rect[1] + rect[3] for rect in layout.values())
+        self.width = min(max(MIN_WIDTH, self.width), right - left)
+        self.height = min(max(MIN_HEIGHT, self.height), bottom - top)
+        x = home[0] + (home[2] - self.width - 24 if self.x is None else self.x)
+        y = home[1] + self.y
+        x = max(left, min(x, right - self.width))
+        y = max(top, min(y, bottom - self.height))
+        if not any(x < bx + bw and x + self.width > bx and
+                   y < by + bh and y + 30 > by
+                   for bx, by, bw, bh in layout.values()):
+            # A gap or an L-shaped layout can have empty desktop coordinates.
+            # Keep the header on the chosen output rather than losing the popup.
+            self.clamp(home[2], home[3])
+            return
+        self.x, self.y = x - home[0], y - home[1]
 
     def relocate(self, old: tuple[int, int, int, int],
                  new: tuple[int, int, int, int],

@@ -30,5 +30,6 @@
 - `show-history` displays the latest 10 saved translations by default, accepts a positive `-n` / `--limit` override, and starts at the bottom in chronological order. Its limit does not change persistent mode's 10-entry limit. Persistent appending follows new entries only when already at the bottom; scrolling up preserves the reading position.
 - Persistent and normal popup heights are remembered separately. Provider, language, and persistence flags must not write configuration, and appending must preserve saved placement and capture each request before queued translation work.
 - Use layer-shell for independent popup placement on niri. Preserve remembered geometry, dragging between monitors, and proportional placement on disconnect.
+- Keep explicit layer-shell output selection authoritative during remapping; GDK's surface output can still be stale at `map`. Drops may span connected monitors, with interactive portions sharing the same text and scroll position.
 - Automatic monitor fallback must preserve the saved home and position, including across restarts and reconnections. Only dragging the header saves a new monitor and position; resizing updates remembered size.
 - Without layer-shell, let the compositor handle normal GTK window placement.
