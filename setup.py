@@ -14,6 +14,7 @@ import venv
 from dataclasses import asdict
 
 from xpeek.config import Config, CONFIG_PATH
+from xpeek.window_state import WINDOW_STATE_PATH
 
 PROJECT_DIR = Path(__file__).resolve().parent
 VENV_DIR = PROJECT_DIR / ".venv"
@@ -65,7 +66,8 @@ def create_config(state: dict) -> bool:
 
 
 def uninstall(remove_config: bool = False) -> None:
-    state = {"created_dirs": [], "config_path": str(CONFIG_PATH)}
+    state = {"created_dirs": [], "config_path": str(CONFIG_PATH),
+             "window_state_path": str(WINDOW_STATE_PATH)}
     if not VENV_DIR.exists() and not VENV_DIR.is_symlink():
         print("xpeek is not installed by this setup script.")
     else:
@@ -74,21 +76,78 @@ def uninstall(remove_config: bool = False) -> None:
             LINK.unlink()
         shutil.rmtree(VENV_DIR)
     if remove_config:
-        config_path = Path(state.get("config_path", str(CONFIG_PATH)))
-        config_path.unlink(missing_ok=True)
-        try:
-            config_path.parent.rmdir()
-        except OSError:
-            pass
+        for key, default in (("config_path", CONFIG_PATH),
+                             ("window_state_path", WINDOW_STATE_PATH)):
+            path = Path(state.get(key, str(default)))
+            path.unlink(missing_ok=True)
+            try:
+                path.parent.rmdir()
+            except OSError:
+                pass
     for directory in state["created_dirs"]:
         try:
             Path(directory).rmdir()
         except OSError:
             pass  # Keep directories that now contain other files.
     print("Uninstalled xpeek. " + (
-        "Configuration removed; history preserved."
-        if remove_config else "Configuration and history preserved."
+        "Configuration and popup state removed; history preserved."
+        if remove_config else "Configuration, popup state, and history preserved."
     ))
+
+
+def check_gtk() -> bool:
+    """Use distro GTK bindings, without opening a window or building native code."""
+    result = subprocess.run(
+        [sys._base_executable, "-c", """
+from ctypes import CDLL
+try:
+    CDLL('libgtk4-layer-shell.so.0')
+except OSError:
+    pass
+import gi
+gi.require_version('Gtk', '4.0')
+from gi.repository import Gtk
+try:
+    gi.require_version('Gtk4LayerShell', '1.0')
+    from gi.repository import Gtk4LayerShell
+except (ImportError, ValueError):
+    print('normal-window')
+else:
+    print('layer-shell')
+"""], capture_output=True, text=True,
+    )
+    if result.returncode:
+        raise RuntimeError(
+            "System GTK4/PyGObject bindings are required. On Arch/CachyOS: "
+            "sudo pacman -S python-gobject gtk4 gtk4-layer-shell. "
+            "Run setup with the distro's Python interpreter."
+        )
+    return result.stdout.strip() == "layer-shell"
+
+
+def remove_old_qt() -> None:
+    """Remove only Qt distributions installed inside this managed environment."""
+    result = subprocess.run(
+        [str(VENV_DIR / "bin" / "python"), "-c", """
+from importlib.metadata import distribution, PackageNotFoundError
+from pathlib import Path
+import sys
+root = Path(sys.prefix).resolve()
+for name in ('PySide6', 'PySide6_Addons', 'PySide6_Essentials', 'shiboken6'):
+    try:
+        package = distribution(name)
+    except PackageNotFoundError:
+        continue
+    if Path(package.locate_file('')).resolve().is_relative_to(root):
+        print(name)
+"""], check=True, capture_output=True, text=True,
+    )
+    packages = result.stdout.splitlines()
+    if packages:
+        subprocess.run(
+            [str(VENV_DIR / "bin" / "python"), "-m", "pip", "uninstall", "-y", *packages],
+            check=True,
+        )
 
 
 def install() -> None:
@@ -101,12 +160,15 @@ def install() -> None:
     state = read_state() if existing else {
         "project": str(PROJECT_DIR), "link": str(LINK), "created_dirs": [],
     }
+    layer_shell = check_gtk()
+    state["window_state_path"] = str(WINDOW_STATE_PATH)
     config_created = False
     try:
-        if not existing:
-            print("Creating virtual environment...", flush=True)
-            venv.EnvBuilder(with_pip=True).create(VENV_DIR)
-            MARKER.write_text(json.dumps(state, indent=2) + "\n")
+        print("Updating virtual environment..." if existing else "Creating virtual environment...",
+              flush=True)
+        # Reconfigure older isolated environments to see distro PyGObject.
+        venv.EnvBuilder(with_pip=True, system_site_packages=True).create(VENV_DIR)
+        MARKER.write_text(json.dumps(state, indent=2) + "\n")
 
         # Build from a temporary source copy to keep setuptools artifacts
         # and this installer script out of package builds.
@@ -124,6 +186,7 @@ def install() -> None:
                  "--upgrade", f"{source}[all]"],
                 check=True,
             )
+        remove_old_qt()
 
         missing_dirs = []
         directory = BIN_DIR
@@ -146,6 +209,8 @@ def install() -> None:
 
     print(f"Installed xpeek: {LINK}")
     print(f"Config {'created' if config_created else 'preserved'}: {CONFIG_PATH}")
+    if not layer_shell:
+        print("For remembered popup placement: sudo pacman -S gtk4-layer-shell")
     if str(BIN_DIR) not in os.environ.get("PATH", "").split(os.pathsep):
         print('Add ~/.local/bin to your PATH: export PATH="$HOME/.local/bin:$PATH"')
     missing_tools = [name for name in ("grim", "slurp", "wl-copy") if not shutil.which(name)]
@@ -162,11 +227,11 @@ def main(argv: list[str] | None = None) -> int:
     config_options = uninstall_parser.add_mutually_exclusive_group()
     config_options.add_argument(
         "--keep-config", dest="remove_config", action="store_false",
-        help="Keep user configuration (default)",
+        help="Keep user configuration and popup state (default)",
     )
     config_options.add_argument(
         "--remove-config", dest="remove_config", action="store_true",
-        help="Also remove the user config.json; keep translation history",
+        help="Also remove config.json and popup state; keep translation history",
     )
     uninstall_parser.set_defaults(remove_config=False)
     args = parser.parse_args(argv)

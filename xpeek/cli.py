@@ -94,7 +94,7 @@ def _translate_region(config: Config, region: Region, args: argparse.Namespace) 
         return run_gui_translation(config, mode="translate")
     except ImportError as exc:
         print(f"Error loading GUI: {exc}", file=sys.stderr)
-        print("Please ensure PySide6 is installed: pip install PySide6", file=sys.stderr)
+        print("Install GTK4 and python-gobject, then rerun python3 setup.py install.", file=sys.stderr)
         return 1
     finally:
         pid_file.unlink(missing_ok=True)

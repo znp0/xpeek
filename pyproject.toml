@@ -8,7 +8,7 @@ dependencies = [
     "rapidocr-onnxruntime>=1.2.0",
     "pillow>=10.0.0",
     "requests>=2.31.0",
-    "PySide6>=6.5.0",
+    "PyGObject>=3.42.0",
     "python-dotenv>=1.0.0",
 ]
 

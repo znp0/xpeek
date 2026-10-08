@@ -4,13 +4,14 @@ Copy and translate screen text on Linux/Wayland. Select a region, extract text w
 
 ## Install
 
-Requires Python 3.10+, `grim`, `slurp`, and `wl-copy`. OCR uses bundled
+Requires Python 3.10+, GTK4, PyGObject, `grim`, `slurp`, and `wl-copy`.
+Install `gtk4-layer-shell` for an independently positioned popup. OCR uses bundled
 RapidOCR/ONNX models; Tesseract and language packs are not required.
 
 On Arch/CachyOS:
 
 ```bash
-sudo pacman -S python python-pip grim slurp wl-clipboard
+sudo pacman -S python python-pip python-gobject gtk4 gtk4-layer-shell grim slurp wl-clipboard
 # Optional desktop notifications (also needs a notification daemon):
 sudo pacman -S libnotify
 
@@ -19,7 +20,7 @@ cd xpeek
 python3 setup.py install
 ```
 
-The installer creates `.venv`, installs all Python/provider dependencies, links `~/.local/bin/xpeek` to the command, and creates `~/.config/xpeek/config.json` if missing. No `sudo` is needed for setup. Keep the checkout in place; rerun `python3 setup.py install` after updating it. If `xpeek` is not found, add `~/.local/bin` to your shell's PATH:
+The installer creates `.venv` with access to distro GTK bindings, installs Python/provider dependencies, links `~/.local/bin/xpeek`, and creates `~/.config/xpeek/config.json` if missing. Use your distro's Python; setup needs no `sudo`. Reinstall also migrates older Qt installations. Keep the checkout in place and rerun `python3 setup.py install` after updates. If `xpeek` is not found, add `~/.local/bin` to your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -30,10 +31,10 @@ To uninstall, run this from the same checkout:
 ```bash
 python3 setup.py uninstall                 # Keep config (default)
 python3 setup.py uninstall --keep-config   # Explicitly keep config
-python3 setup.py uninstall --remove-config # Also delete config.json
+python3 setup.py uninstall --remove-config # Also delete config and popup state
 ```
 
-Uninstall removes the managed environment and command symlink, plus any empty directories created by install. Configuration is kept unless `--remove-config` is specified. History and unrelated files are always preserved. System packages are managed separately.
+Uninstall removes the managed environment and command symlink, plus any empty directories created by install. Configuration and popup state are kept unless `--remove-config` is specified. History and unrelated files are preserved. System packages are managed separately.
 
 ## Usage
 
@@ -61,6 +62,16 @@ again to start a translation. `ocr` always leaves the saved region unchanged;
 without a provider (or with `-p clipboard`), it copies text and runs independently.
 Successful copies send a desktop notification when
 `notify-send` is available; empty OCR leaves the clipboard unchanged.
+
+Selection dims the live screen while keeping the selected area clear. Drag to
+select, release to finish, or press Escape to cancel.
+
+On niri and other layer-shell desktops, the popup needs no window rules. Drag
+its header to move it, resize from an edge or corner, and close with the button
+or Escape when focused. It remembers its output, position, and size in
+`~/.local/state/xpeek/window-state.json` (respects `XDG_STATE_HOME`). Delete this
+file to reset placement. Without layer-shell, a normal GTK window restores its
+size while the desktop controls its position.
 
 ## Configuration
 

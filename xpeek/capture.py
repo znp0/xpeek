@@ -35,7 +35,8 @@ def select_region() -> Region:
     _require_binary("slurp")
     try:
         result = subprocess.run(
-            ["slurp"],
+            ["slurp", "-b", "00000080", "-s", "00000000",
+             "-c", "ffffffcc", "-w", "1"],
             capture_output=True,
             text=True,
             check=False,
@@ -60,7 +61,8 @@ def capture_region(region: Region, out_path: Path | None = None) -> Path:
     """
     _require_binary("grim")
 
-    if out_path is None:
+    temporary = out_path is None
+    if temporary:
         fd, name = tempfile.mkstemp(prefix="screen-ocr-", suffix=".png")
         import os
 
@@ -74,14 +76,16 @@ def capture_region(region: Region, out_path: Path | None = None) -> Path:
             text=True,
             check=False,
         )
-    except OSError as exc:
-        raise CaptureError(f"Failed to launch grim: {exc}") from exc
-
-    if result.returncode != 0:
-        stderr = result.stderr.strip()
-        raise CaptureError(f"grim failed to capture region: {stderr or 'unknown error'}")
-
-    if not out_path.exists() or out_path.stat().st_size == 0:
-        raise CaptureError("grim produced no output image")
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            raise CaptureError(f"grim failed to capture region: {stderr or 'unknown error'}")
+        if not out_path.exists() or out_path.stat().st_size == 0:
+            raise CaptureError("grim produced no output image")
+    except (OSError, CaptureError) as exc:
+        if temporary:
+            out_path.unlink(missing_ok=True)
+        if isinstance(exc, CaptureError):
+            raise
+        raise CaptureError(f"Failed to capture region: {exc}") from exc
 
     return out_path
