@@ -83,6 +83,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.drag_origin = None
         self.monitor = None
         self.monitor_handler = None
+        self.output_bounds = {}
         self.layer = LayerShell is not None and LayerShell.is_supported()
         self.display = self.get_display()
         self.monitors = self.display.get_monitors()
@@ -204,6 +205,16 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self.monitor.disconnect(self.monitor_handler)
         self.monitor = monitor
         self.monitor_handler = monitor.connect("notify::geometry", self._monitor_changed)
+        self._remember_outputs()
+
+    def _remember_outputs(self):
+        # Removed monitors may report empty geometry, and surviving outputs may
+        # move. Keep their previous layout for choosing the facing edges.
+        self.output_bounds = {
+            monitor: (bounds.x, bounds.y, bounds.width, bounds.height)
+            for monitor in self.monitors
+            if (bounds := monitor.get_geometry()).width > 0 and bounds.height > 0
+        }
 
     def _mapped(self, _window):
         monitor = self.display.get_monitor_at_surface(self.get_surface())
@@ -222,7 +233,10 @@ class OverlayWindow(Gtk.ApplicationWindow):
         if self.closed or not self.layer:
             return
         bounds = self.monitor.get_geometry()
+        if bounds.width <= 0 or bounds.height <= 0 or self.monitor not in list(self.monitors):
+            return
         self.state.clamp(bounds.width, bounds.height)
+        self._remember_outputs()
         self._apply_geometry()
         self._queue_save()
 
@@ -231,10 +245,33 @@ class OverlayWindow(Gtk.ApplicationWindow):
             return
         monitors = list(self.monitors)
         if monitors and self.monitor not in monitors:
-            self._watch_monitor(monitors[0])
+            old_bounds = self.output_bounds.get(self.monitor)
+
+            def previous_bounds(monitor):
+                bounds = monitor.get_geometry()
+                return self.output_bounds.get(
+                    monitor, (bounds.x, bounds.y, bounds.width, bounds.height))
+
+            def distance(monitor):
+                left, top, width, height = previous_bounds(monitor)
+                x, y, w, h = old_bounds
+                dx = max(left - (x + w), x - (left + width), 0)
+                dy = max(top - (y + h), y - (top + height), 0)
+                centers = (2 * left + width - 2 * x - w) ** 2 + (2 * top + height - 2 * y - h) ** 2
+                return dx * dx + dy * dy, centers
+
+            chosen = min(monitors, key=distance) if old_bounds else monitors[0]
+            bounds = chosen.get_geometry()
+            if old_bounds and bounds.width > 0 and bounds.height > 0:
+                self.state.relocate(old_bounds, previous_bounds(chosen),
+                                    (bounds.width, bounds.height))
+            self.drag_origin = None
+            self._watch_monitor(chosen)
             self.state.output = self.monitor.get_connector()
             LayerShell.set_monitor(self, self.monitor)
             self._monitor_changed()
+        elif self.monitor in monitors:
+            self._remember_outputs()
 
     def _apply_geometry(self):
         self.set_default_size(self.state.width, self.state.height)

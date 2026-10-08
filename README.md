@@ -73,6 +73,10 @@ or Escape when focused. It remembers its output, position, and size in
 file to reset placement. Without layer-shell, a normal GTK window restores its
 size while the desktop controls its position.
 
+If the popup's monitor disconnects, it moves to the nearest remaining monitor.
+Its gap from the facing edge is scaled to that monitor's size: a popup near the
+left edge of a monitor on the right lands near the remaining monitor's right edge.
+
 ## Configuration
 
 Config: `~/.config/xpeek/config.json`. History: `~/.local/share/xpeek/history.json`. Both respect `XDG_CONFIG_HOME` / `XDG_DATA_HOME`. Setup creates the config; `xpeek select` saves the region into it. Edit it using [config.example.json](config.example.json) as a reference. Set `provider`, `source_lang`, `target_lang`, `history_limit`, and

@@ -57,6 +57,33 @@ class WindowState:
         self.x = max(0, min(x, width - self.width))
         self.y = max(0, min(self.y, height - self.height))
 
+    def relocate(self, old: tuple[int, int, int, int],
+                 new: tuple[int, int, int, int],
+                 size: tuple[int, int] | None = None) -> None:
+        """Transfer proportional edge gaps between outputs in the old layout."""
+        old_left, old_top, old_width, old_height = old
+        new_left, new_top, layout_width, layout_height = new
+        new_width, new_height = size or (layout_width, layout_height)
+        self.clamp(old_width, old_height)
+        x, y, width, height = self.x, self.y, self.width, self.height
+        self.clamp(new_width, new_height)
+
+        if old_left >= new_left + layout_width:
+            # Output on the right disappeared: its left gap becomes a right gap.
+            self.x = round(new_width - self.width - x * new_width / old_width)
+        elif new_left >= old_left + old_width:
+            self.x = round((old_width - width - x) * new_width / old_width)
+        else:
+            self.x = round(x * new_width / old_width)
+
+        if old_top >= new_top + layout_height:
+            self.y = round(new_height - self.height - y * new_height / old_height)
+        elif new_top >= old_top + old_height:
+            self.y = round((old_height - height - y) * new_height / old_height)
+        else:
+            self.y = round(y * new_height / old_height)
+        self.clamp(new_width, new_height)
+
     def save(self, path: Path = WINDOW_STATE_PATH) -> None:
         temporary = None
         try:
