@@ -45,17 +45,21 @@ xpeek translate -s en -t ja       # Translate English text to Japanese
 xpeek translate -s auto -t en     # Detect the source language and translate
 xpeek translate -p=clipboard      # Copy OCR text from the saved region
 xpeek ocr                         # Select a temporary region and copy its text
+xpeek ocr -p google               # Translate a temporary region in an overlay
+xpeek ocr -p gemini -s auto -t en  # Choose provider and languages for that region
 xpeek show-last                   # Show the most recent translation
 xpeek history -n 10               # Show recent history
 xpeek clear-history
 xpeek --help
 xpeek translate --help
+xpeek ocr --help
 ```
 
-Only one translation window is used. If it already exists, `translate` closes
-it and exits, regardless of provider. Run the command again to open a new
-translation or copy from the saved region. `ocr` runs independently and never
-changes the saved region. Successful copies send a desktop notification when
+Only one translation window is used. If it already exists, `translate` or
+`ocr -p PROVIDER` with a translation provider closes it and exits. Run the command
+again to start a translation. `ocr` always leaves the saved region unchanged;
+without a provider (or with `-p clipboard`), it copies text and runs independently.
+Successful copies send a desktop notification when
 `notify-send` is available; empty OCR leaves the clipboard unchanged.
 
 ## Configuration
@@ -72,7 +76,7 @@ and removed when the config is next saved.
 
 Providers: `google` (no key), `deepl`, `openai`, `gemini`, and `ollama` (local server). `-p` / `--provider` overrides the saved provider without saving it; `clipboard` skips translation.
 
-Use `-s` / `--source-lang` and `-t` / `--target-lang` to override translation languages without saving. Omitted flags use the configured languages (`auto` → `en` initially). Use `--source-lang auto` (or `detect`) to request automatic source detection. Supported languages and codes depend on the provider. These flags do not change the OCR model; recognition depends on its supported characters. Clipboard mode copies the original text and ignores translation language flags.
+Both `translate` and `ocr` accept `-p` / `--provider`, `-s` / `--source-lang`, and `-t` / `--target-lang`. `translate` defaults to the configured provider; `ocr` defaults to `clipboard`. Language flags override translation languages without saving; omitted flags use the configured languages (`auto` → `en` initially). Use `--source-lang auto` (or `detect`) to request automatic source detection. Supported languages and codes depend on the provider. These flags do not change the OCR model; recognition depends on its supported characters. Clipboard mode copies the original text and ignores translation language flags.
 
 ### API keys
 

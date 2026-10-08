@@ -3,7 +3,7 @@
 Commands:
     xpeek select          -- interactively pick and save a screen region
     xpeek translate       -- capture saved region -> OCR -> translate -> print
-    xpeek ocr             -- select temporary region -> OCR -> clipboard
+    xpeek ocr             -- select temporary region -> OCR -> copy or translate
     xpeek history         -- show translation history
     xpeek clear-history   -- wipe translation history
 """
@@ -14,6 +14,7 @@ import os
 import signal
 import sys
 from pathlib import Path
+from dataclasses import replace
 
 from .capture import CaptureError, capture_region, select_region
 from .clipboard import ClipboardError, copy_text
@@ -73,14 +74,20 @@ def cmd_translate(args: argparse.Namespace) -> int:
     if args.provider == "clipboard":
         return _ocr_to_clipboard(config, config.region)
 
-    if args.provider is not None:
-        config.provider = args.provider
-    if args.source_lang is not None:
-        config.source_lang = args.source_lang
-    config.source_lang = _source_language(config.source_lang)
-    if args.target_lang is not None:
-        config.target_lang = args.target_lang
+    return _translate_region(config, config.region, args)
 
+
+def _translate_region(config: Config, region: Region, args: argparse.Namespace) -> int:
+    config = replace(
+        config,
+        region=region,
+        provider=args.provider if args.provider is not None else config.provider,
+        source_lang=_source_language(
+            args.source_lang if args.source_lang is not None else config.source_lang
+        ),
+        target_lang=args.target_lang if args.target_lang is not None else config.target_lang,
+    )
+    pid_file = Path("/tmp/xpeek.pid")
     pid_file.write_text(str(os.getpid()))
     try:
         from .gui import run_gui_translation
@@ -94,12 +101,18 @@ def cmd_translate(args: argparse.Namespace) -> int:
 
 
 def cmd_ocr(args: argparse.Namespace) -> int:
+    translating = args.provider != "clipboard"
+    if translating and _send_signal(signal.SIGUSR1):
+        return 0
+
     config = Config.load()
     try:
         region = select_region()
     except CaptureError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
+    if translating:
+        return _translate_region(config, region, args)
     return _ocr_to_clipboard(config, region)
 
 
@@ -170,14 +183,34 @@ def cmd_clear_history(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     provider_choices = sorted([*PROVIDERS, "clipboard"])
+
+    def add_translation_options(
+        command_parser: argparse.ArgumentParser, provider_default: str | None, provider_help: str
+    ) -> None:
+        command_parser.add_argument(
+            "-p", "--provider", choices=provider_choices, default=provider_default,
+            help=provider_help,
+        )
+        command_parser.add_argument(
+            "-s", "--source-lang", metavar="CODE", type=_source_language, default=None,
+            help=(
+                "Source language, e.g. en, or auto/detect for automatic detection; "
+                "defaults to config (initially auto)"
+            ),
+        )
+        command_parser.add_argument(
+            "-t", "--target-lang", metavar="CODE", default=None,
+            help="Target language for translation, e.g. ja; defaults to config (initially en)",
+        )
+
     parser = argparse.ArgumentParser(
         prog="xpeek",
         description="Copy and translate screen text on Wayland.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "translate options (place after translate):\n"
+            "translate / ocr options (place after the command):\n"
             "  -p, --provider {" + ",".join(provider_choices) + "}\n"
-            "                        Override the configured provider without saving;\n"
+            "                        Provider (translate: config; ocr: clipboard);\n"
             "                        clipboard copies OCR text without translation.\n"
             "  -s, --source-lang CODE Source language; auto/detect requests detection.\n"
             "  -t, --target-lang CODE Target language for translation (configured default).\n\n"
@@ -187,8 +220,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  xpeek translate --source-lang en --target-lang ja\n"
             "  xpeek translate -s auto -t vi\n"
             "  xpeek translate --provider=clipboard\n"
-            "  xpeek ocr\n\n"
-            "Use translate --help for provider options and window behavior."
+            "  xpeek ocr\n"
+            "  xpeek ocr -p gemini -s auto -t en\n\n"
+            "Use translate --help or ocr --help for window behavior and examples."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -215,37 +249,40 @@ def build_parser() -> argparse.ArgumentParser:
             "  xpeek translate -s en -t ja\n"
             "  xpeek translate -s auto -t vi\n"
             "  xpeek translate --provider=clipboard\n\n"
-            "Use xpeek ocr to select a temporary region and copy its text."
+            "Use xpeek ocr -p PROVIDER to translate a temporary region."
         ),
     )
-    p_translate.add_argument(
-        "-p", "--provider", choices=provider_choices, default=None,
-        help=(
+    add_translation_options(
+        p_translate, None,
+        (
             "Override the configured provider without saving; "
             "clipboard copies OCR text without translation"
         ),
     )
-    p_translate.add_argument(
-        "-s", "--source-lang", metavar="CODE", type=_source_language, default=None,
-        help=(
-            "Source language, e.g. en, or auto/detect for automatic detection; "
-            "defaults to config (initially auto)"
-        ),
-    )
-    p_translate.add_argument(
-        "-t", "--target-lang", metavar="CODE", default=None,
-        help="Target language for translation, e.g. ja; defaults to config (initially en)",
-    )
     p_translate.set_defaults(func=cmd_translate)
 
     p_ocr = subparsers.add_parser(
-        "ocr", help="Select a temporary region, OCR it, and copy to clipboard",
+        "ocr", help="Select a temporary region, OCR it, and copy or translate",
         description=(
-            "Interactively select a temporary region and copy its OCR text to the Wayland "
-            "clipboard using wl-copy (install wl-clipboard). Preserves line "
-            "breaks without changing the saved region or toggling a translation "
-            "window. Use translate -p=clipboard to copy text from the saved region."
+            "Select a temporary region without changing the saved region.\n"
+            "Default: copy its OCR text to the clipboard using wl-copy.\n"
+            "With a translation provider, show the translation in an overlay.\n"
+            "If a window already exists, a translation request closes it and exits\n"
+            "without selecting a region. Clipboard mode runs independently.\n\n"
+            "Language flags affect translation only, not OCR recognition."
         ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  xpeek ocr                       # temporary region -> clipboard\n"
+            "  xpeek ocr -p google             # temporary region -> translation\n"
+            "  xpeek ocr -p gemini -s auto -t en\n\n"
+            "Use translate -p=clipboard to copy text from the saved region."
+        ),
+    )
+    add_translation_options(
+        p_ocr, "clipboard",
+        "Translation provider; defaults to clipboard (copy original OCR text)",
     )
     p_ocr.set_defaults(func=cmd_ocr)
 
