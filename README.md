@@ -29,10 +29,10 @@ To uninstall, run this from the same checkout:
 ```bash
 python3 setup.py uninstall                 # Keep config (default)
 python3 setup.py uninstall --keep-config   # Explicitly keep config
-python3 setup.py uninstall --remove-config # Also delete config and popup state
+python3 setup.py uninstall --remove-config # Also delete config, saved region, and popup state
 ```
 
-Uninstall removes the managed environment and command symlink, plus any empty directories created by install. Configuration and popup state are kept unless `--remove-config` is specified. History and unrelated files are preserved. System packages are managed separately.
+Uninstall removes the managed environment and command symlink, plus any empty directories created by install. Configuration, saved region, and popup state are kept unless `--remove-config` is specified. History and unrelated files are preserved. System packages are managed separately.
 
 ## Usage
 
@@ -71,9 +71,11 @@ If the popup's monitor disconnects, it temporarily moves to the nearest remainin
 
 ## Configuration
 
-Config: `~/.config/xpeek/config.json`. History: `~/.local/share/xpeek/history.json`. Both respect `XDG_CONFIG_HOME` / `XDG_DATA_HOME`. Setup creates the config; `xpeek select` saves the region into it. Edit it using [config.example.json](config.example.json) as a reference. Set `provider`, `source_lang`, `target_lang`, `persistent_window`, `history_limit`, and per-provider models/hosts in `provider_options`. Set `persistent_window` to `true` to open popups in append mode by default (initially `false`).
+Config: `~/.config/xpeek/config.json` (respects `XDG_CONFIG_HOME`). Setup creates it; edit it using [config.example.json](config.example.json) as a reference. Set `provider`, `source_lang`, `target_lang`, `persistent_window`, `history_limit`, and per-provider models/hosts in `provider_options`. Set `persistent_window` to `true` to open popups in append mode by default (initially `false`).
 
-The installed config starts with `source_lang: "auto"`, `target_lang: "en"`, and empty `provider_options`. xpeek reads this file; if it is missing, rerun `python3 setup.py install`. Reinstall preserves existing configuration. The example illustrates optional provider settings and is not loaded automatically.
+`xpeek select` saves the region in `~/.local/state/xpeek/region.json`, alongside `window-state.json` (respects `XDG_STATE_HOME`). Selecting a region does not change config. History stays in `~/.local/share/xpeek/history.json` (respects `XDG_DATA_HOME`).
+
+The installed config starts with `source_lang: "auto"`, `target_lang: "en"`, and empty `provider_options`. xpeek reads this file; if it is missing, rerun `python3 setup.py install`. Setup leaves existing configuration and state files unchanged. The example illustrates optional provider settings and is not loaded automatically.
 
 Providers: `google` (no key), `deepl`, `openai`, `gemini`, and `ollama` (local server). `-p` / `--provider` overrides the saved provider without saving it; `clipboard` skips translation.
 

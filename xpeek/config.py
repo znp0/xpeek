@@ -10,7 +10,7 @@ import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 try:
     from dotenv import load_dotenv
@@ -68,7 +68,6 @@ class Region:
 
 @dataclass
 class Config:
-    region: Optional[Region] = None
     history_limit: int = 100
     provider: str = "google"
     source_lang: str = "auto"
@@ -88,17 +87,12 @@ class Config:
         except json.JSONDecodeError as exc:
             raise ConfigError(f"Config file at {path} is corrupted: {exc}") from exc
 
-        # Accept older configs but drop settings that never affected behavior.
         try:
-            raw.pop("ocr_lang", None)
-            raw.pop("overlay_enabled", None)
-            region_raw = raw.pop("region", None)
-            region = Region(**region_raw) if region_raw else None
-            config = cls(region=region, **raw)
+            config = cls(**raw)
             if type(config.persistent_window) is not bool:
                 raise ValueError("persistent_window must be true or false")
             return config
-        except (AttributeError, TypeError, ValueError) as exc:
+        except (TypeError, ValueError) as exc:
             raise ConfigError(f"Invalid config file at {path}: {exc}") from exc
 
     def save(self, path: Path = CONFIG_PATH) -> None:

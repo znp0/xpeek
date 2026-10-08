@@ -42,6 +42,7 @@ from .config import Config, Region
 from .history import HistoryStore
 from .ocr import OcrError, extract_text
 from .providers import TranslationError, get_translator
+from .region_state import load_region
 from .window_state import MIN_HEIGHT, MIN_WIDTH, WindowState
 
 APPLICATION_ID = "io.github.znp0.xpeek"
@@ -69,7 +70,7 @@ def translation_result(
     try:
         try:
             if image is None:
-                image = capture_region(config.region)
+                image = capture_region(load_region())
         except CaptureError as exc:
             return f"Capture error: {exc}", "", ""
         try:
@@ -243,7 +244,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
                 self.entries.append(DisplayEntry("History", "No translation history."))
             self._render_entries()
         elif mode == "translate":
-            self.submit_translation(config, capture_region(config.region))
+            self.submit_translation(config, capture_region(load_region()))
 
     def _build_content(self, window=None):
         window = self if window is None else window
@@ -810,7 +811,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
 
 def run_gui_translation(
     config: Config, mode: str = "translate", *, persistent: bool | None = None,
-    temporary: bool = False, display_limit: int = DISPLAY_LIMIT,
+    region: Region | None = None, temporary: bool = False, display_limit: int = DISPLAY_LIMIT,
 ) -> int:
     initialized = Gtk.init_check()
     display = Gdk.Display.get_default() or Gdk.Display.open(None)
@@ -860,16 +861,14 @@ def run_gui_translation(
             if window is not None and (request["mode"] == "last" or not append):
                 window.dismiss()
                 return 0
-            data = request["config"]
-            region = data.pop("region")
-            current = Config(region=Region(**region) if region else None, **data)
+            current = Config(**request["config"])
             if request["mode"] != "last":
-                if request["temporary"]:
-                    current = replace(current, region=select_region())
-                if current.region is None:
+                selected = select_region() if request["temporary"] else (
+                    Region(**request["region"]) if request["region"] else None)
+                if selected is None:
                     raise CaptureError("No region has been saved yet. Run `xpeek select` first.")
                 # Capture immediately, even if an earlier translation is slow.
-                image = capture_region(current.region)
+                image = capture_region(selected)
             if window is None:
                 current = replace(current, persistent_window=append)
                 window = OverlayWindow(application, current, "last" if request["mode"] == "last" else "empty",
@@ -901,6 +900,7 @@ def run_gui_translation(
         # GApplication forwards this in-memory request to the primary instance.
         # Credentials never enter OS argv, configuration, or temporary files.
         request = {"config": asdict(config), "mode": mode, "persistent": persistent,
+                   "region": asdict(region) if region is not None else None,
                    "temporary": temporary, "display_limit": display_limit,
                    "credentials": {name: os.environ.get(name) for name in API_KEY_ENV.values()}}
         return app.run(["xpeek", json.dumps(request)])

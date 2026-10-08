@@ -16,11 +16,12 @@ from dataclasses import replace
 
 from .capture import CaptureError, capture_region, select_region
 from .clipboard import ClipboardError, copy_text
-from .config import Config, ConfigError, CONFIG_PATH, Region
+from .config import Config, ConfigError, Region
 from .history import HistoryStore
 from .notifications import notify_clipboard_copied
 from .ocr import OcrError, extract_text
 from .providers import PROVIDERS
+from .region_state import REGION_PATH, load_region, save_region
 
 
 def _source_language(value: str) -> str:
@@ -38,28 +39,28 @@ def _positive_int(value: str) -> int:
 
 
 def cmd_select(args: argparse.Namespace) -> int:
-    config = Config.load()
+    Config.load()
     try:
         region = select_region()
     except CaptureError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    config.region = region
-    config.save()
-    print(f"Saved region {region.as_geometry()} to {CONFIG_PATH}")
+    save_region(region)
+    print(f"Saved region {region.as_geometry()} to {REGION_PATH}")
     return 0
 
 
 def cmd_translate(args: argparse.Namespace) -> int:
     config = Config.load()
+    region = load_region()
     if (args.provider or config.provider) == "clipboard":
-        if config.region is None:
+        if region is None:
             print("No region has been saved yet. Run `xpeek select` first.", file=sys.stderr)
             return 1
-        return _ocr_to_clipboard(config, config.region)
+        return _ocr_to_clipboard(config, region)
 
-    return _translate_region(config, config.region, args)
+    return _translate_region(config, region, args)
 
 
 def _translate_region(
@@ -67,7 +68,6 @@ def _translate_region(
 ) -> int:
     config = replace(
         config,
-        region=region,
         provider=args.provider if args.provider is not None else config.provider,
         source_lang=_source_language(
             args.source_lang if args.source_lang is not None else config.source_lang
@@ -77,7 +77,7 @@ def _translate_region(
     try:
         from .gui import run_gui_translation
         return run_gui_translation(
-            config, mode="translate", persistent=args.persistent, temporary=temporary
+            config, mode="translate", region=region, persistent=args.persistent, temporary=temporary
         )
     except ImportError as exc:
         print(f"Error loading GUI: {exc}", file=sys.stderr)
@@ -210,7 +210,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    p_select = subparsers.add_parser("select", help="Select and save the OCR region")
+    p_select = subparsers.add_parser(
+        "select", help="Select and save the OCR region",
+        description="Select a screen region and save it in the state directory without changing config.",
+    )
     p_select.set_defaults(func=cmd_select)
 
     p_translate = subparsers.add_parser(

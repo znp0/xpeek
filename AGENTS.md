@@ -6,7 +6,8 @@
 
 - Use `.venv/bin/python` for local checks. GTK bindings come from distro packages.
 - `python3 setup.py install` creates or updates the managed environment and command symlink. Rerun it when changing the installed command or package version.
-- Preserve existing user configuration, window state, and history during install.
+- Preserve existing user configuration, saved region, window state, and history during install.
+- Do not add automatic configuration or state migrations unless explicitly requested.
 - Run checks relevant to the change and `git diff --check` before committing. GUI input changes need real pointer testing when possible; simulated coordinate tests alone can miss compositor behavior. Report live-testing limitations.
 - Keep task-specific test scripts and build artifacts out of the repository; use temporary files and remove them when finished.
 - Never read out or commit API keys, `.env`, or user configuration containing secrets. `.env.example` must contain placeholders only.
@@ -24,7 +25,7 @@
 
 ## Behavior to preserve
 
-- `select` saves a region; `translate` uses it. `ocr` selects a temporary region without changing the saved one and defaults to copying text to the clipboard.
+- `select` saves a region in `$XDG_STATE_HOME/xpeek/region.json` (default `~/.local/state/xpeek/region.json`); `translate` uses it. Keep selected regions and popup geometry out of config. `ocr` selects a temporary region without changing the saved one and defaults to copying text to the clipboard.
 - Provider and language flags override configuration only for that invocation.
 - Translation invocations toggle the single popup in normal mode. Persistent mode appends the latest 10 entries with scrolling; later calls inherit the open popup's mode unless explicitly overridden. Clipboard-only invocations run independently.
 - `show-history` displays the latest 10 saved translations by default, accepts a positive `-n` / `--limit` override, and starts at the bottom in chronological order. Its limit does not change persistent mode's 10-entry limit. Persistent appending follows new entries only when already at the bottom; scrolling up preserves the reading position.

@@ -14,6 +14,7 @@ import venv
 from dataclasses import asdict
 
 from xpeek.config import Config, CONFIG_PATH
+from xpeek.region_state import REGION_PATH
 from xpeek.window_state import WINDOW_STATE_PATH
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -67,7 +68,7 @@ def create_config(state: dict) -> bool:
 
 def uninstall(remove_config: bool = False) -> None:
     state = {"created_dirs": [], "config_path": str(CONFIG_PATH),
-             "window_state_path": str(WINDOW_STATE_PATH)}
+             "window_state_path": str(WINDOW_STATE_PATH), "region_path": str(REGION_PATH)}
     if not VENV_DIR.exists() and not VENV_DIR.is_symlink():
         print("xpeek is not installed by this setup script.")
     else:
@@ -77,7 +78,8 @@ def uninstall(remove_config: bool = False) -> None:
         shutil.rmtree(VENV_DIR)
     if remove_config:
         for key, default in (("config_path", CONFIG_PATH),
-                             ("window_state_path", WINDOW_STATE_PATH)):
+                             ("window_state_path", WINDOW_STATE_PATH),
+                             ("region_path", REGION_PATH)):
             path = Path(state.get(key, str(default)))
             path.unlink(missing_ok=True)
             try:
@@ -90,8 +92,8 @@ def uninstall(remove_config: bool = False) -> None:
         except OSError:
             pass  # Keep directories that now contain other files.
     print("Uninstalled xpeek. " + (
-        "Configuration and popup state removed; history preserved."
-        if remove_config else "Configuration, popup state, and history preserved."
+        "Configuration, saved region, and popup state removed; history preserved."
+        if remove_config else "Configuration, saved region, popup state, and history preserved."
     ))
 
 
@@ -137,6 +139,7 @@ def install() -> None:
     }
     layer_shell = check_gtk()
     state["window_state_path"] = str(WINDOW_STATE_PATH)
+    state["region_path"] = str(REGION_PATH)
     config_created = False
     try:
         print("Updating virtual environment..." if existing else "Creating virtual environment...",
@@ -200,11 +203,11 @@ def main(argv: list[str] | None = None) -> int:
     config_options = uninstall_parser.add_mutually_exclusive_group()
     config_options.add_argument(
         "--keep-config", dest="remove_config", action="store_false",
-        help="Keep user configuration and popup state (default)",
+        help="Keep user configuration, saved region, and popup state (default)",
     )
     config_options.add_argument(
         "--remove-config", dest="remove_config", action="store_true",
-        help="Also remove config.json and popup state; keep translation history",
+        help="Also remove config.json, saved region, and popup state; keep translation history",
     )
     uninstall_parser.set_defaults(remove_config=False)
     args = parser.parse_args(argv)
