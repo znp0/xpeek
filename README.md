@@ -4,9 +4,7 @@ Copy and translate screen text on Linux/Wayland. Select a region, extract text w
 
 ## Install
 
-Requires Python 3.10+, GTK4, PyGObject, `grim`, `slurp`, and `wl-copy`.
-Install `gtk4-layer-shell` for an independently positioned popup. OCR uses bundled
-RapidOCR/ONNX models; Tesseract and language packs are not required.
+Requires Python 3.10+, GTK4, PyGObject, `grim`, `slurp`, and `wl-copy`. Install `gtk4-layer-shell` for an independently positioned popup. OCR uses bundled RapidOCR/ONNX models; Tesseract and language packs are not required.
 
 On Arch:
 
@@ -56,39 +54,19 @@ xpeek translate --help
 xpeek ocr --help
 ```
 
-Only one translation window is used. If it already exists, `translate` or
-`ocr -p PROVIDER` with a translation provider closes it and exits. Run the command
-again to start a translation. `ocr` always leaves the saved region unchanged;
-without a provider (or with `-p clipboard`), it copies text and runs independently.
-Successful copies send a desktop notification when
-`notify-send` is available; empty OCR leaves the clipboard unchanged.
+Only one translation window is used. If it already exists, `translate` or `ocr -p PROVIDER` with a translation provider closes it and exits. Run the command again to start a translation. `ocr` always leaves the saved region unchanged; without a provider (or with `-p clipboard`), it copies text and runs independently. Successful copies send a desktop notification when `notify-send` is available; empty OCR leaves the clipboard unchanged.
 
-Selection dims the live screen while keeping the selected area clear. Drag to
-select, release to finish, or press Escape to cancel.
+Selection dims the live screen while keeping the selected area clear. Drag to select, release to finish, or press Escape to cancel.
 
-On niri and other layer-shell desktops, the popup needs no window rules. Drag
-its header to move it between monitors; on release it fits within that monitor.
-Resize from an edge or corner, and close with the button
-or Escape when focused. It remembers its output, position, and size in
-`~/.local/state/xpeek/window-state.json` (respects `XDG_STATE_HOME`). Delete this
-file to reset placement. Without layer-shell, a normal GTK window restores its
-size while the desktop controls its position.
+On niri and other layer-shell desktops, the popup needs no window rules. Drag its header to move it between monitors; on release it fits within that monitor. Resize from an edge or corner, and close with the button or Escape when focused. It remembers its output, position, and size in `~/.local/state/xpeek/window-state.json` (respects `XDG_STATE_HOME`). Delete this file to reset placement. Without layer-shell, a normal GTK window restores its size while the desktop controls its position.
 
-If the popup's monitor disconnects, it moves to the nearest remaining monitor.
-Its gap from the facing edge is scaled to that monitor's size: a popup near the
-left edge of a monitor on the right lands near the remaining monitor's right edge.
+If the popup's monitor disconnects, it moves to the nearest remaining monitor. Its gap from the facing edge is scaled to that monitor's size: a popup near the left edge of a monitor on the right lands near the remaining monitor's right edge.
 
 ## Configuration
 
-Config: `~/.config/xpeek/config.json`. History: `~/.local/share/xpeek/history.json`. Both respect `XDG_CONFIG_HOME` / `XDG_DATA_HOME`. Setup creates the config; `xpeek select` saves the region into it. Edit it using [config.example.json](config.example.json) as a reference. Set `provider`, `source_lang`, `target_lang`, `history_limit`, and
-per-provider models/hosts in `provider_options`.
+Config: `~/.config/xpeek/config.json`. History: `~/.local/share/xpeek/history.json`. Both respect `XDG_CONFIG_HOME` / `XDG_DATA_HOME`. Setup creates the config; `xpeek select` saves the region into it. Edit it using [config.example.json](config.example.json) as a reference. Set `provider`, `source_lang`, `target_lang`, `history_limit`, and per-provider models/hosts in `provider_options`.
 
-The installed config starts with `source_lang: "auto"`, `target_lang: "en"`,
-and empty `provider_options`. xpeek reads this file; if it is missing, rerun
-`python3 setup.py install`. Reinstall preserves existing configuration. The
-example illustrates optional provider settings and is not loaded automatically.
-Obsolete `ocr_lang` and `overlay_enabled` fields in older configs are ignored
-and removed when the config is next saved.
+The installed config starts with `source_lang: "auto"`, `target_lang: "en"`, and empty `provider_options`. xpeek reads this file; if it is missing, rerun `python3 setup.py install`. Reinstall preserves existing configuration. The example illustrates optional provider settings and is not loaded automatically. Obsolete `ocr_lang` and `overlay_enabled` fields in older configs are ignored and removed when the config is next saved.
 
 Providers: `google` (no key), `deepl`, `openai`, `gemini`, and `ollama` (local server). `-p` / `--provider` overrides the saved provider without saving it; `clipboard` skips translation.
 
@@ -103,14 +81,11 @@ cp -n .env.example .env
 # Edit .env and fill in only DEEPL_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY.
 ```
 
-xpeek loads the checkout's `.env` automatically, including when launched from
-another directory. `.env` is ignored by Git; `.env.example` contains no keys.
-You can also export a key instead:
+xpeek loads the checkout's `.env` automatically, including when launched from another directory. `.env` is ignored by Git; `.env.example` contains no keys. You can also export a key instead:
 
 ```bash
 export GEMINI_API_KEY="your-key"
 xpeek translate -p gemini
 ```
 
-Exported variables take precedence over `.env`. Keep `provider_options` empty
-or use it only for non-secret settings such as models and hosts.
+Exported variables take precedence over `.env`. Keep `provider_options` empty or use it only for non-secret settings such as models and hosts.
