@@ -2,6 +2,8 @@
 
 Copy and translate screen text on Linux/Wayland. Select a region, extract text with RapidOCR, and display a translation or copy the original text to your clipboard. Defaults to automatic source-language detection → English using Google Translate.
 
+![xpeek translating game dialogue into Vietnamese in a persistent popup](docs/images/xpeek-in-action.png)
+
 ## Install
 
 Requires Python 3.10+, GTK4, PyGObject, `grim`, `slurp`, and `wl-copy`. Install `gtk4-layer-shell` for an independently positioned popup. OCR uses bundled RapidOCR/ONNX models; Tesseract and language packs are not required.
