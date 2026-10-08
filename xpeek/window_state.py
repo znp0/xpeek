@@ -21,6 +21,7 @@ MIN_HEIGHT = 120
 class WindowState:
     width: int = 500
     height: int = 400
+    persistent_height: int = 700
     x: int | None = None  # None means upper-right on the first opening.
     y: int = 24
     output: str | None = None
@@ -31,11 +32,11 @@ class WindowState:
         try:
             raw = json.loads(path.read_text())
             state = cls(**raw)
-            for key in ("width", "height", "y"):
+            for key in ("width", "height", "persistent_height", "y"):
                 value = getattr(state, key)
                 if type(value) is not int or not 0 <= value <= 2**31 - 1:
                     raise ValueError("Invalid geometry")
-            if state.width == 0 or state.height == 0:
+            if state.width == 0 or state.height == 0 or state.persistent_height == 0:
                 raise ValueError("Invalid size")
             if state.x is not None and (
                 type(state.x) is not int or not 0 <= state.x <= 2**31 - 1

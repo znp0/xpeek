@@ -4,6 +4,7 @@
   "provider": "google",
   "source_lang": "auto",
   "target_lang": "en",
+  "persistent_window": false,
   "provider_options": {
     "openai": {
       "model": "gpt-4o-mini"

@@ -39,6 +39,8 @@ Uninstall removes the managed environment and command symlink, plus any empty di
 ```bash
 xpeek select                      # Select and save a translation region
 xpeek translate                   # Translate the saved region in an overlay
+xpeek translate --persistent      # Append translations to a persistent popup
+xpeek translate --no-persistent   # Close an existing popup; otherwise use normal mode
 xpeek translate -p gemini         # Override the provider for this invocation
 xpeek translate -s en -t ja       # Translate English text to Japanese
 xpeek translate -s auto -t en     # Detect the source language and translate
@@ -46,31 +48,36 @@ xpeek translate -p=clipboard      # Copy OCR text from the saved region
 xpeek ocr                         # Select a temporary region and copy its text
 xpeek ocr -p google               # Translate a temporary region in an overlay
 xpeek ocr -p gemini -s auto -t en  # Choose provider and languages for that region
-xpeek show-last                   # Show the most recent translation
-xpeek history -n 10               # Show recent history
+xpeek show-history                # Show the latest 10 translations, starting at the bottom
+xpeek show-history -n 20          # Show the latest 20 saved translations
+xpeek history -n 10               # Print recent history in the terminal
 xpeek clear-history
 xpeek --help
 xpeek translate --help
 xpeek ocr --help
 ```
 
-Only one translation window is used. If it already exists, `translate` or `ocr -p PROVIDER` with a translation provider closes it and exits. Run the command again to start a translation. `ocr` always leaves the saved region unchanged; without a provider (or with `-p clipboard`), it copies text and runs independently. Successful copies send a desktop notification when `notify-send` is available; empty OCR leaves the clipboard unchanged.
+Only one translation window is used. By default, a translation invocation closes an existing popup and exits; run it again to translate. `--persistent` enables append mode, keeping the latest 10 entries with scrolling and removing older entries from the display. Later translation calls inherit the open popup's mode, including calls with another provider. `--no-persistent` restores the default behavior and closes an existing popup. The close button, Escape when focused, or `show-history` also closes it. Display trimming does not remove saved history.
+
+`show-history` opens the latest 10 saved translations in chronological order and scrolls to the bottom. Use `-n N` / `--limit N` to choose a positive number of entries. This does not change persistent mode's 10-entry limit. Persistent mode follows new entries while you're at the bottom; scrolling up preserves your reading position.
+
+`ocr` always leaves the saved region unchanged; without a provider (or with `-p clipboard`), it copies text and runs independently. `translate -p clipboard` uses the saved region and also runs independently. Clipboard mode ignores persistence flags. Successful copies send a desktop notification when `notify-send` is available; empty OCR leaves the clipboard unchanged.
 
 Selection dims the live screen while keeping the selected area clear. Drag to select, release to finish, or press Escape to cancel.
 
-On niri and other layer-shell desktops, the popup needs no window rules. Drag its header to move it between monitors; on release it fits within that monitor. Resize from an edge or corner, and close with the button or Escape when focused. It remembers its output, position, and size in `~/.local/state/xpeek/window-state.json` (respects `XDG_STATE_HOME`). Delete this file to reset placement. Without layer-shell, a normal GTK window restores its size while the desktop controls its position.
+On niri and other layer-shell desktops, the popup needs no window rules. Drag its header to move it between monitors; on release it fits within that monitor. Resize from an edge or corner, and close with the button or Escape when focused. Persistent mode starts 700 logical pixels tall, versus 400 in normal mode; both fit within the monitor and remember their heights separately. It remembers its output, position, and size in `~/.local/state/xpeek/window-state.json` (respects `XDG_STATE_HOME`). Delete this file to reset placement. Without layer-shell, a normal GTK window restores its size while the desktop controls its position.
 
 If the popup's monitor disconnects, it temporarily moves to the nearest remaining monitor. Its gap from the facing edge is scaled to that monitor's size: a popup near the left edge of a monitor on the right lands near the remaining monitor's right edge. The original monitor and position remain saved across closing and reopening; reconnecting that monitor restores them. Only dragging the header saves a new monitor and position. Resizing updates the remembered size.
 
 ## Configuration
 
-Config: `~/.config/xpeek/config.json`. History: `~/.local/share/xpeek/history.json`. Both respect `XDG_CONFIG_HOME` / `XDG_DATA_HOME`. Setup creates the config; `xpeek select` saves the region into it. Edit it using [config.example.json](config.example.json) as a reference. Set `provider`, `source_lang`, `target_lang`, `history_limit`, and per-provider models/hosts in `provider_options`.
+Config: `~/.config/xpeek/config.json`. History: `~/.local/share/xpeek/history.json`. Both respect `XDG_CONFIG_HOME` / `XDG_DATA_HOME`. Setup creates the config; `xpeek select` saves the region into it. Edit it using [config.example.json](config.example.json) as a reference. Set `provider`, `source_lang`, `target_lang`, `persistent_window`, `history_limit`, and per-provider models/hosts in `provider_options`. Set `persistent_window` to `true` to open popups in append mode by default (initially `false`).
 
 The installed config starts with `source_lang: "auto"`, `target_lang: "en"`, and empty `provider_options`. xpeek reads this file; if it is missing, rerun `python3 setup.py install`. Reinstall preserves existing configuration. The example illustrates optional provider settings and is not loaded automatically.
 
 Providers: `google` (no key), `deepl`, `openai`, `gemini`, and `ollama` (local server). `-p` / `--provider` overrides the saved provider without saving it; `clipboard` skips translation.
 
-Both `translate` and `ocr` accept `-p` / `--provider`, `-s` / `--source-lang`, and `-t` / `--target-lang`. `translate` defaults to the configured provider; `ocr` defaults to `clipboard`. Language flags override translation languages without saving; omitted flags use the configured languages (`auto` → `en` initially). Use `--source-lang auto` (or `detect`) to request automatic source detection. Supported languages and codes depend on the provider. These flags do not change the OCR model; recognition depends on its supported characters. Clipboard mode copies the original text and ignores translation language flags.
+Both `translate` and `ocr` accept `-p` / `--provider`, `-s` / `--source-lang`, `-t` / `--target-lang`, and `--persistent` / `--no-persistent`. Flags do not change configuration. `translate` defaults to the configured provider; `ocr` defaults to `clipboard`. Omitted language flags use the configured languages (`auto` → `en` initially). Use `--source-lang auto` (or `detect`) to request automatic source detection. Supported languages and codes depend on the provider. These flags do not change the OCR model; recognition depends on its supported characters. Clipboard mode copies the original text and ignores translation language flags.
 
 ### API keys
 

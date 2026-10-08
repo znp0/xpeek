@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 from ctypes import CDLL
-from dataclasses import replace
+from concurrent.futures import CancelledError, ThreadPoolExecutor
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime
+import json
 import os
+from pathlib import Path
 import signal
 import sys
-from threading import Thread
 
 # Load layer-shell before GTK/libwayland, as required by its Python bindings.
 try:
@@ -35,20 +38,39 @@ try:
 except (ImportError, ValueError):
     LayerShell = None
 
-from .capture import CaptureError, capture_region
-from .config import Config
+from .capture import CaptureError, capture_region, select_region
+from .config import Config, Region
 from .history import HistoryStore
 from .ocr import OcrError, extract_text
 from .providers import TranslationError, get_translator
 from .window_state import MIN_HEIGHT, MIN_WIDTH, WindowState
 
+APPLICATION_ID = "io.github.znp0.xpeek"
+DISPLAY_LIMIT = 10
+API_KEY_ENV = {"deepl": "DEEPL_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 
-def translation_result(config: Config) -> tuple[str, str, str]:
+
+@dataclass(eq=False)
+class DisplayEntry:
+    heading: str
+    text: str
+    start: Gtk.TextMark | None = None
+    body_start: Gtk.TextMark | None = None
+    body_end: Gtk.TextMark | None = None
+    end: Gtk.TextMark | None = None
+    has_heading: bool = False
+    rendered_text: str | None = None
+
+
+def translation_result(
+    config: Config, image: Path | None = None, credentials: dict | None = None
+) -> tuple[str, str, str]:
     """Perform blocking work without accessing GTK objects."""
     original = ""
     try:
         try:
-            image = capture_region(config.region)
+            if image is None:
+                image = capture_region(config.region)
         except CaptureError as exc:
             return f"Capture error: {exc}", "", ""
         try:
@@ -62,6 +84,14 @@ def translation_result(config: Config) -> tuple[str, str, str]:
         if not original:
             return "", "", ""
         try:
+            variable = API_KEY_ENV.get(config.provider)
+            if variable and credentials is not None:
+                options = dict(config.provider_options.get(config.provider, {}))
+                key = options.get("api_key") or credentials.get(variable)
+                if not key:
+                    raise TranslationError(f"{config.provider} requires {variable}; set it in .env or export it.")
+                options["api_key"] = key
+                config = replace(config, provider_options={**config.provider_options, config.provider: options})
             provider = get_translator(config.provider, config.provider_options)
             translated = provider.translate(original, config.source_lang, config.target_lang)
         except TranslationError as exc:
@@ -106,14 +136,27 @@ class DragPreview(Gtk.Window):
 
 
 class OverlayWindow(Gtk.ApplicationWindow):
-    def __init__(self, app: Gtk.Application, config: Config, mode: str):
+    def __init__(self, app: Gtk.Application, config: Config, mode: str, *, display_limit: int = DISPLAY_LIMIT):
         super().__init__(application=app, title="xpeek")
         self.app = app
         self.config = config
-        self.preferred = WindowState.load()
+        remembered = WindowState.load()
+        self.normal_height = remembered.height
+        self.persistent_height = remembered.persistent_height
+        self.persistent = config.persistent_window
+        self.show_headings = self.persistent or mode == "last"
+        self.preferred = replace(remembered, height=(
+            self.persistent_height if self.persistent else self.normal_height))
         self.state = replace(self.preferred)
         self.closed = False
-        self.worker = None
+        self.entries = []
+        self.rendered_entries = []
+        self.jobs = {}
+        self.scroll_source = None
+        if not hasattr(app, "translation_executor"):
+            # One worker keeps RapidOCR and history writes serialized, including
+            # when a closed popup is reopened while its last request finishes.
+            app.translation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="xpeek-translation")
         self.save_source = None
         self.drag_origin = None
         self.drag_previews = {}
@@ -163,13 +206,13 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.add_controller(keys)
 
         if mode == "last":
-            entries = HistoryStore(limit=config.history_limit).all()
-            self.buffer.set_text(entries[-1].translation if entries else "No translation history.")
-        else:
-            self.buffer.set_text("…")
-            self.app.hold()
-            self.worker = Thread(target=self._translate, name="xpeek-translation")
-            self.worker.start()
+            entries = HistoryStore(limit=config.history_limit).all()[-display_limit:]
+            self.entries = [DisplayEntry(entry.timestamp, entry.translation) for entry in entries]
+            if not self.entries:
+                self.entries.append(DisplayEntry("History", "No translation history."))
+            self._render_entries()
+        elif mode == "translate":
+            self.submit_translation(config, capture_region(config.region))
 
     def _build_content(self):
         grid = Gtk.Grid()
@@ -195,10 +238,18 @@ class OverlayWindow(Gtk.ApplicationWindow):
                        text.set_top_margin, text.set_bottom_margin):
             method(12)
         self.buffer = text.get_buffer()
+        self.heading_tag = self.buffer.create_tag("heading", foreground="#aaaaaa", scale=0.8)
+        self.end_mark = self.buffer.create_mark("latest", self.buffer.get_end_iter(), False)
+        self.text = text
         scroll = Gtk.ScrolledWindow()
         scroll.set_hexpand(True)
         scroll.set_vexpand(True)
         scroll.set_child(text)
+        self.scroll = scroll
+        scrolling = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.BOTH_AXES)
+        scrolling.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        scrolling.connect("scroll", self._scroll_input)
+        scroll.add_controller(scrolling)
         body.append(scroll)
         grid.attach(body, 1, 1, 1, 1)
 
@@ -553,17 +604,109 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self.state.height = surface.get_height()
         if not self.layer:
             self.preferred.width, self.preferred.height = self.state.width, self.state.height
-        self.preferred.save()
+        if self.persistent:
+            replace(self.preferred, height=self.normal_height, persistent_height=self.preferred.height).save()
+        else:
+            replace(self.preferred, persistent_height=self.persistent_height).save()
         return GLib.SOURCE_REMOVE
 
-    def _translate(self):
-        result = translation_result(self.config)
-        GLib.idle_add(self._translation_finished, *result)
+    def enable_persistent(self):
+        if self.persistent:
+            return
+        self._cancel_drag_for_layout()
+        self.normal_height = self.preferred.height
+        self.preferred.height = self.persistent_height
+        self.persistent = True
+        self.show_headings = True
+        if self.layer:
+            self._place_on_monitor(self.monitor)
+            self._apply_geometry()
+        else:
+            self.state.height = self.persistent_height
+            self.set_default_size(self.state.width, self.state.height)
+        self._queue_save()
+        self._render_entries()
 
-    def _translation_finished(self, error, original, translated):
-        if not self.closed:
-            self.buffer.set_text(f"Error:\n{error}" if error else
-                                 translated if original else "Could not detect any text.")
+    def submit_translation(self, config, image, credentials=None):
+        heading = f"{datetime.now():%H:%M:%S} · {config.provider} · {config.source_lang} → {config.target_lang}"
+        entry = DisplayEntry(heading, "…")
+        self.entries.append(entry)
+        self.entries = self.entries[-DISPLAY_LIMIT:]
+        self._render_entries()
+        self.app.hold()
+        future = self.app.translation_executor.submit(translation_result, config, image, credentials)
+        self.jobs[future] = image
+        future.add_done_callback(lambda done: GLib.idle_add(self._translation_finished, entry, done))
+
+    def _render_entries(self):
+        adjustment = self.scroll.get_vadjustment()
+        follow = self.scroll_source is not None or (
+            adjustment.get_value() + adjustment.get_page_size() >= adjustment.get_upper() - 5)
+        for entry in self.rendered_entries:
+            if entry not in self.entries:
+                self.buffer.delete(self.buffer.get_iter_at_mark(entry.start), self.buffer.get_iter_at_mark(entry.end))
+                for mark in (entry.start, entry.body_start, entry.body_end, entry.end):
+                    self.buffer.delete_mark(mark)
+        for entry in self.entries:
+            if entry.start is None:
+                entry.start = self.buffer.create_mark(None, self.buffer.get_end_iter(), True)
+                if self.show_headings:
+                    self.buffer.insert_with_tags(self.buffer.get_end_iter(), entry.heading + "\n", self.heading_tag)
+                    entry.has_heading = True
+                entry.body_start = self.buffer.create_mark(None, self.buffer.get_end_iter(), True)
+                self.buffer.insert(self.buffer.get_end_iter(), entry.text)
+                entry.body_end = self.buffer.create_mark(None, self.buffer.get_end_iter(), True)
+                self.buffer.insert(self.buffer.get_end_iter(), "\n\n")
+                entry.end = self.buffer.create_mark(None, self.buffer.get_end_iter(), True)
+            else:
+                if self.show_headings and not entry.has_heading:
+                    start = self.buffer.get_iter_at_mark(entry.start).get_offset()
+                    self.buffer.insert_with_tags(self.buffer.get_iter_at_offset(start), entry.heading + "\n", self.heading_tag)
+                    self.buffer.move_mark(entry.body_start, self.buffer.get_iter_at_offset(start + len(entry.heading) + 1))
+                    entry.has_heading = True
+                if entry.text != entry.rendered_text:
+                    start = self.buffer.get_iter_at_mark(entry.body_start).get_offset()
+                    self.buffer.delete(self.buffer.get_iter_at_mark(entry.body_start), self.buffer.get_iter_at_mark(entry.body_end))
+                    self.buffer.insert(self.buffer.get_iter_at_offset(start), entry.text)
+                    self.buffer.move_mark(entry.body_end, self.buffer.get_iter_at_offset(start + len(entry.text)))
+            entry.rendered_text = entry.text
+        self.rendered_entries = self.entries.copy()
+        self.buffer.move_mark(self.end_mark, self.buffer.get_end_iter())
+        if follow:
+            self.scroll_frames = 0
+            if self.scroll_source is None:
+                self.scroll_source = self.add_tick_callback(self._scroll_latest)
+
+    def _scroll_latest(self, _widget, _clock):
+        # Keep following through asynchronous TextView layout. Scrolling by the
+        # user cancels this callback and native GTK viewport anchoring takes over.
+        self.text.scroll_to_mark(self.end_mark, 0, True, 0, 1)
+        adjustment = self.scroll.get_vadjustment()
+        adjustment.set_value(max(0, adjustment.get_upper() - adjustment.get_page_size()))
+        self.scroll_frames += 1
+        if self.scroll_frames < 3:
+            return GLib.SOURCE_CONTINUE
+        self.scroll_source = None
+        return GLib.SOURCE_REMOVE
+
+    def _scroll_input(self, _controller, _dx, _dy):
+        # Native scrolling wins over a pending automatic scroll after appending.
+        if self.scroll_source is not None:
+            self.remove_tick_callback(self.scroll_source)
+            self.scroll_source = None
+        return False
+
+    def _translation_finished(self, entry, future):
+        self.jobs.pop(future, None)
+        try:
+            error, original, translated = future.result()
+        except CancelledError:
+            error, original, translated = "", "", ""
+        except Exception as exc:
+            error, original, translated = str(exc), "", ""
+        if not self.closed and entry in self.entries:
+            entry.text = f"Error:\n{error}" if error else translated if original else "Could not detect any text."
+            self._render_entries()
         self.app.release()
         return GLib.SOURCE_REMOVE
 
@@ -581,6 +724,12 @@ class OverlayWindow(Gtk.ApplicationWindow):
         if self.closed:
             return
         self.closed = True
+        for future, image in list(self.jobs.items()):
+            if future.cancel():
+                image.unlink(missing_ok=True)
+        if self.scroll_source is not None:
+            self.remove_tick_callback(self.scroll_source)
+            self.scroll_source = None
         self.drag_origin = None
         if self.drag_finish_source is not None:
             GLib.source_remove(self.drag_finish_source)
@@ -595,19 +744,22 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.destroy()
 
 
-def run_gui_translation(config: Config, mode: str = "translate") -> int:
+def run_gui_translation(
+    config: Config, mode: str = "translate", *, persistent: bool | None = None,
+    temporary: bool = False, display_limit: int = DISPLAY_LIMIT,
+) -> int:
     initialized = Gtk.init_check()
     display = Gdk.Display.get_default() or Gdk.Display.open(None)
     if not initialized or display is None:
         print("Cannot open the popup: no accessible Wayland display.", file=sys.stderr)
         return 1
-    app = Gtk.Application(application_id="io.github.znp0.xpeek",
-                          flags=Gio.ApplicationFlags.NON_UNIQUE)
+    app = Gtk.Application(application_id=APPLICATION_ID,
+                          flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
     GLib.set_application_name("xpeek")
     sources = []
-    startup_failed = False
+    window = None
 
-    def activate(application):
+    def startup(application):
         css = Gtk.CssProvider()
         css.load_from_data(b"""
             window.xpeek { background: #101010; color: #ffffff; border: 1px solid #363636; }
@@ -620,30 +772,77 @@ def run_gui_translation(config: Config, mode: str = "translate") -> int:
         """)
         Gtk.StyleContext.add_provider_for_display(display, css,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        window = OverlayWindow(application, config, mode)
-
         def dismiss():
-            window.dismiss()
+            if window is not None:
+                window.dismiss()
             return GLib.SOURCE_CONTINUE
 
         for sig in (signal.SIGUSR1, signal.SIGUSR2):
             sources.append(GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, dismiss))
-        window.present()
 
-    def start(application):
-        nonlocal startup_failed
+    def command_line(application, command):
+        nonlocal window
+        image = None
         try:
-            activate(application)
+            if application.get_dbus_connection() is None:
+                raise RuntimeError("No accessible session D-Bus; cannot manage a single popup.")
+            request = json.loads(command.get_arguments()[1])
+            requested = request["persistent"]
+            if window is not None and window.closed:
+                window = None
+            append = requested if requested is not None else (
+                window.persistent if window is not None else request["config"]["persistent_window"])
+            # Decide whether to close before selecting or capturing any region.
+            if window is not None and (request["mode"] == "last" or not append):
+                window.dismiss()
+                return 0
+            data = request["config"]
+            region = data.pop("region")
+            current = Config(region=Region(**region) if region else None, **data)
+            if request["mode"] != "last":
+                if request["temporary"]:
+                    current = replace(current, region=select_region())
+                if current.region is None:
+                    raise CaptureError("No region has been saved yet. Run `xpeek select` first.")
+                # Capture immediately, even if an earlier translation is slow.
+                image = capture_region(current.region)
+            if window is None:
+                current = replace(current, persistent_window=append)
+                window = OverlayWindow(application, current, "last" if request["mode"] == "last" else "empty",
+                                       display_limit=request.get("display_limit", DISPLAY_LIMIT))
+                window.present()
+            elif append:
+                window.enable_persistent()
+            if image is not None:
+                window.submit_translation(current, image, request["credentials"])
+                image = None  # The worker owns the capture, including cleanup.
+            return 0
         except Exception as exc:
-            startup_failed = True
-            print(f"Cannot open the popup: {exc}", file=sys.stderr)
-            application.quit()
+            message = f"Error: {exc}\n"
+            printer = getattr(command, "printerr_literal", None)
+            if printer is not None:
+                printer(message)
+            else:
+                print(message, end="", file=sys.stderr)
+            if window is None:
+                application.quit()
+            return 1
+        finally:
+            if image is not None:
+                image.unlink(missing_ok=True)
 
-    app.connect("activate", start)
+    app.connect("startup", startup)
+    app.connect("command-line", command_line)
     try:
-        # CLI arguments are already parsed; do not pass them to GTK.
-        result = app.run([])
-        return 1 if startup_failed else result
+        # GApplication forwards this in-memory request to the primary instance.
+        # Credentials never enter OS argv, configuration, or temporary files.
+        request = {"config": asdict(config), "mode": mode, "persistent": persistent,
+                   "temporary": temporary, "display_limit": display_limit,
+                   "credentials": {name: os.environ.get(name) for name in API_KEY_ENV.values()}}
+        return app.run(["xpeek", json.dumps(request)])
     finally:
         for source in sources:
             GLib.source_remove(source)
+        executor = getattr(app, "translation_executor", None)
+        if executor is not None:
+            executor.shutdown(wait=True)

@@ -26,7 +26,9 @@
 
 - `select` saves a region; `translate` uses it. `ocr` selects a temporary region without changing the saved one and defaults to copying text to the clipboard.
 - Provider and language flags override configuration only for that invocation.
-- Translation invocations toggle the single popup; clipboard-only invocations run independently. Provider-switching popup updates remain deferred.
+- Translation invocations toggle the single popup in normal mode. Persistent mode appends the latest 10 entries with scrolling; later calls inherit the open popup's mode unless explicitly overridden. Clipboard-only invocations run independently.
+- `show-history` displays the latest 10 saved translations by default, accepts a positive `-n` / `--limit` override, and starts at the bottom in chronological order. Its limit does not change persistent mode's 10-entry limit. Persistent appending follows new entries only when already at the bottom; scrolling up preserves the reading position.
+- Persistent and normal popup heights are remembered separately. Provider, language, and persistence flags must not write configuration, and appending must preserve saved placement and capture each request before queued translation work.
 - Use layer-shell for independent popup placement on niri. Preserve remembered geometry, dragging between monitors, and proportional placement on disconnect.
 - Automatic monitor fallback must preserve the saved home and position, including across restarts and reconnections. Only dragging the header saves a new monitor and position; resizing updates remembered size.
 - Without layer-shell, let the compositor handle normal GTK window placement.

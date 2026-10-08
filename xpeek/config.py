@@ -73,6 +73,7 @@ class Config:
     provider: str = "google"
     source_lang: str = "auto"
     target_lang: str = "en"
+    persistent_window: bool = False
     # Per-provider settings such as models and hosts; keys can come from .env.
     provider_options: Dict[str, Any] = field(default_factory=dict)
 
@@ -93,7 +94,10 @@ class Config:
             raw.pop("overlay_enabled", None)
             region_raw = raw.pop("region", None)
             region = Region(**region_raw) if region_raw else None
-            return cls(region=region, **raw)
+            config = cls(region=region, **raw)
+            if type(config.persistent_window) is not bool:
+                raise ValueError("persistent_window must be true or false")
+            return config
         except (AttributeError, TypeError, ValueError) as exc:
             raise ConfigError(f"Invalid config file at {path}: {exc}") from exc
 
