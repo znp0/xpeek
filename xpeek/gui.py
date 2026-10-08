@@ -261,7 +261,6 @@ class OverlayWindow(Gtk.ApplicationWindow):
                                          event.get_device(), 1, sx, sy, event.get_time())
             return
         self.drag_origin = replace(self.state)
-        self.drag_surface_origin = (self.state.x or 0, self.state.y)
         event = gesture.get_current_event() if gesture is not None else None
         self.drag_press = event.get_position()[1:] if event is not None else None
 
@@ -274,10 +273,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
             _, sx, sy = event.get_position()
             # Resize grips move within the surface as its size changes.
             dx, dy = sx - self.drag_press[0], sy - self.drag_press[1]
-        # Moving the surface also changes pointer coordinates relative to it.
-        # Include that movement to recover displacement from the original press.
-        dx += (self.state.x or 0) - self.drag_surface_origin[0]
-        dy += self.state.y - self.drag_surface_origin[1]
+        # Drag offsets are cumulative from the press. Always apply them to the
+        # starting geometry; adding previous movement makes the popup run away.
         bounds = self.monitor.get_geometry()
         if edge == "move":
             self.state.x = round((origin.x or 0) + dx)
