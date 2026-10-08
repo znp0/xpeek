@@ -60,7 +60,7 @@ Selection dims the live screen while keeping the selected area clear. Drag to se
 
 On niri and other layer-shell desktops, the popup needs no window rules. Drag its header to move it between monitors; on release it fits within that monitor. Resize from an edge or corner, and close with the button or Escape when focused. It remembers its output, position, and size in `~/.local/state/xpeek/window-state.json` (respects `XDG_STATE_HOME`). Delete this file to reset placement. Without layer-shell, a normal GTK window restores its size while the desktop controls its position.
 
-If the popup's monitor disconnects, it moves to the nearest remaining monitor. Its gap from the facing edge is scaled to that monitor's size: a popup near the left edge of a monitor on the right lands near the remaining monitor's right edge.
+If the popup's monitor disconnects, it temporarily moves to the nearest remaining monitor. Its gap from the facing edge is scaled to that monitor's size: a popup near the left edge of a monitor on the right lands near the remaining monitor's right edge. The original monitor and position remain saved across closing and reopening; reconnecting that monitor restores them. Only dragging the header saves a new monitor and position. Resizing updates the remembered size.
 
 ## Configuration
 

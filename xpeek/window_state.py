@@ -1,7 +1,7 @@
 """Remember popup geometry independently of OCR and translation settings."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import json
 import os
 from pathlib import Path
@@ -24,6 +24,7 @@ class WindowState:
     x: int | None = None  # None means upper-right on the first opening.
     y: int = 24
     output: str | None = None
+    output_layout: dict[str, tuple[int, int, int, int]] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path = WINDOW_STATE_PATH) -> "WindowState":
@@ -42,6 +43,15 @@ class WindowState:
                 raise ValueError("Invalid position")
             if state.output is not None and not isinstance(state.output, str):
                 raise ValueError("Invalid output")
+            if not isinstance(state.output_layout, dict):
+                raise ValueError("Invalid output layout")
+            for name, bounds in state.output_layout.items():
+                if (not isinstance(name, str) or not isinstance(bounds, (list, tuple))
+                        or len(bounds) != 4
+                        or any(type(value) is not int or abs(value) > 2**31 - 1 for value in bounds)
+                        or bounds[2] <= 0 or bounds[3] <= 0):
+                    raise ValueError("Invalid output geometry")
+            state.output_layout = {name: tuple(bounds) for name, bounds in state.output_layout.items()}
             return state
         except FileNotFoundError:
             return cls()

@@ -110,7 +110,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
         super().__init__(application=app, title="xpeek")
         self.app = app
         self.config = config
-        self.state = WindowState.load()
+        self.preferred = WindowState.load()
+        self.state = replace(self.preferred)
         self.closed = False
         self.worker = None
         self.save_source = None
@@ -121,7 +122,6 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.drag_finish_source = None
         self.monitor = None
         self.monitor_handler = None
-        self.output_bounds = {}
         self.layer = LayerShell is not None and LayerShell.is_supported()
         self.display = self.get_display()
         self.monitors = self.display.get_monitors()
@@ -225,16 +225,49 @@ class OverlayWindow(Gtk.ApplicationWindow):
         monitors = list(self.monitors)
         if not monitors:
             return
-        chosen = next((m for m in monitors if m.get_connector() == self.state.output), monitors[0])
-        bounds = chosen.get_geometry()
+        chosen = self._choose_monitor(monitors)
         initial = self.state.x is None
-        self.state.clamp(bounds.width, bounds.height)
+        self._place_on_monitor(chosen)
         if initial:
             self.state.x = None
-        if self.state.output:
+        if self.preferred.output:
             self._watch_monitor(chosen)
             LayerShell.set_monitor(self, chosen)
         self.set_default_size(self.state.width, self.state.height)
+
+    def _choose_monitor(self, monitors):
+        preferred = next((m for m in monitors if m.get_connector() == self.preferred.output), None)
+        if preferred is not None:
+            return preferred
+        old = self.preferred.output_layout.get(self.preferred.output)
+        if old is None:
+            return monitors[0]
+
+        def distance(monitor):
+            bounds = monitor.get_geometry()
+            left, top, width, height = self.preferred.output_layout.get(
+                monitor.get_connector(), (bounds.x, bounds.y, bounds.width, bounds.height))
+            x, y, w, h = old
+            dx = max(left - (x + w), x - (left + width), 0)
+            dy = max(top - (y + h), y - (top + height), 0)
+            centers = (2 * left + width - 2 * x - w) ** 2 + (2 * top + height - 2 * y - h) ** 2
+            return dx * dx + dy * dy, centers
+
+        return min(monitors, key=distance)
+
+    def _place_on_monitor(self, monitor):
+        # Always calculate from the user's placement, never a previous fallback.
+        self.state = replace(self.preferred)
+        bounds = monitor.get_geometry()
+        output = monitor.get_connector()
+        old = self.preferred.output_layout.get(self.preferred.output)
+        if output != self.preferred.output and old is not None:
+            new = self.preferred.output_layout.get(
+                output, (bounds.x, bounds.y, bounds.width, bounds.height))
+            self.state.relocate(old, new, (bounds.width, bounds.height))
+        else:
+            self.state.clamp(bounds.width, bounds.height)
+        self.state.output = output
 
     def _watch_monitor(self, monitor):
         if self.monitor == monitor:
@@ -246,13 +279,15 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self._remember_outputs()
 
     def _remember_outputs(self):
-        # Removed monitors may report empty geometry, and surviving outputs may
-        # move. Keep their previous layout for choosing the facing edges.
-        self.output_bounds = {
-            monitor: (bounds.x, bounds.y, bounds.width, bounds.height)
+        layout = {
+            monitor.get_connector(): (bounds.x, bounds.y, bounds.width, bounds.height)
             for monitor in self.monitors
-            if (bounds := monitor.get_geometry()).width > 0 and bounds.height > 0
+            if monitor.get_connector() is not None
+            and (bounds := monitor.get_geometry()).width > 0 and bounds.height > 0
         }
+        # Keep the old topology while the preferred monitor is disconnected.
+        if self.preferred.output in layout:
+            self.preferred.output_layout = layout
 
     def _mapped(self, _window):
         monitor = self.display.get_monitor_at_surface(self.get_surface())
@@ -260,9 +295,12 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self._watch_monitor(monitor)
             bounds = monitor.get_geometry()
             if self.layer:
-                self.state.output = monitor.get_connector()
-                self.state.clamp(bounds.width, bounds.height)
+                self._place_on_monitor(monitor)
+                if self.preferred.output is None:
+                    self.preferred = replace(self.state)
+                self._remember_outputs()
                 self._apply_geometry()
+                self._queue_save()
             else:
                 self.set_default_size(min(self.state.width, bounds.width),
                                       min(self.state.height, bounds.height))
@@ -273,9 +311,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
         bounds = self.monitor.get_geometry()
         if bounds.width <= 0 or bounds.height <= 0 or self.monitor not in list(self.monitors):
             return
-        if self.drag_origin is not None:
-            self._drag_cancel(None, None)
-        self.state.clamp(bounds.width, bounds.height)
+        self._cancel_drag_for_layout()
+        self._place_on_monitor(self.monitor)
         self._remember_outputs()
         self._apply_geometry()
         self._queue_save()
@@ -283,37 +320,26 @@ class OverlayWindow(Gtk.ApplicationWindow):
     def _outputs_changed(self, *_args):
         if self.closed or not self.layer:
             return
-        if self.drag_origin is not None:
-            self._drag_cancel(None, None)
+        self._cancel_drag_for_layout()
         monitors = list(self.monitors)
-        if monitors and self.monitor not in monitors:
-            old_bounds = self.output_bounds.get(self.monitor)
+        if not monitors:
+            return
+        chosen = self._choose_monitor(monitors)
+        changing_output = chosen != self.monitor
+        self._place_on_monitor(chosen)
+        self._watch_monitor(chosen)
+        self._remember_outputs()
+        self._apply_geometry()
+        if changing_output:
+            LayerShell.set_monitor(self, chosen)
+        self._queue_save()
 
-            def previous_bounds(monitor):
-                bounds = monitor.get_geometry()
-                return self.output_bounds.get(
-                    monitor, (bounds.x, bounds.y, bounds.width, bounds.height))
-
-            def distance(monitor):
-                left, top, width, height = previous_bounds(monitor)
-                x, y, w, h = old_bounds
-                dx = max(left - (x + w), x - (left + width), 0)
-                dy = max(top - (y + h), y - (top + height), 0)
-                centers = (2 * left + width - 2 * x - w) ** 2 + (2 * top + height - 2 * y - h) ** 2
-                return dx * dx + dy * dy, centers
-
-            chosen = min(monitors, key=distance) if old_bounds else monitors[0]
-            bounds = chosen.get_geometry()
-            if old_bounds and bounds.width > 0 and bounds.height > 0:
-                self.state.relocate(old_bounds, previous_bounds(chosen),
-                                    (bounds.width, bounds.height))
-            self.drag_origin = None
-            self._watch_monitor(chosen)
-            self.state.output = self.monitor.get_connector()
-            LayerShell.set_monitor(self, self.monitor)
-            self._monitor_changed()
-        elif self.monitor in monitors:
-            self._remember_outputs()
+    def _cancel_drag_for_layout(self):
+        if self.drag_finish_source is not None:
+            GLib.source_remove(self.drag_finish_source)
+            self.drag_finish_source = GLib.idle_add(self._finish_drag, None, None, None)
+        elif self.drag_origin is not None:
+            self._drag_cancel(None, None)
 
     def _apply_geometry(self):
         self.set_default_size(self.state.width, self.state.height)
@@ -340,6 +366,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
                                          event.get_device(), 1, sx, sy, event.get_time())
             return
         self.drag_origin = replace(self.state)
+        self.drag_edge = edge
+        self.drag_moved = False
         bounds = self.monitor.get_geometry()
         self.drag_output_origin = (bounds.x, bounds.y)
         event = gesture.get_current_event() if gesture is not None else None
@@ -384,6 +412,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
         y = round(oy + origin.y + dy)
         px, py = x + self.drag_pointer[0], y + self.drag_pointer[1]
         self.drag_position = (x, y)
+        self.drag_moved = self.drag_moved or abs(dx) >= 1 or abs(dy) >= 1
         self.drag_target = self.drag_target or self.monitor
         visible = set()
         targets = []
@@ -423,13 +452,18 @@ class OverlayWindow(Gtk.ApplicationWindow):
     def _drag_end(self, _gesture, _dx, _dy):
         if self.drag_origin is None:
             return
+        size = None
+        if self.drag_edge != "move" and (
+                self.state.width, self.state.height) != (self.drag_origin.width, self.drag_origin.height):
+            size = (self.state.width, self.state.height)
         self.drag_origin = None
         # GTK still dispatches the release event after this callback. Remapping
         # or destroying surfaces here invalidates the widgets it is processing.
         self.drag_finish_source = GLib.idle_add(
-            self._finish_drag, self.drag_position, self.drag_target)
+            self._finish_drag, self.drag_position if self.drag_moved else None,
+            self.drag_target, size)
 
-    def _finish_drag(self, position, target):
+    def _finish_drag(self, position, target, size):
         self.drag_finish_source = None
         if self.closed:
             return GLib.SOURCE_REMOVE
@@ -439,12 +473,16 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self.state.x, self.state.y = position[0] - bounds.x, position[1] - bounds.y
             self.state.clamp(bounds.width, bounds.height)
             self.state.output = target.get_connector()
+            self.preferred = replace(self.state)
             changing_output = target != self.monitor
             self._watch_monitor(target)
+            self._remember_outputs()
             self._apply_geometry()
             # Remapping only after release leaves the pointer grab intact.
             if changing_output:
                 LayerShell.set_monitor(self, target)
+        elif size is not None:
+            self.preferred.width, self.preferred.height = size
         self._queue_save()
         return GLib.SOURCE_REMOVE
 
@@ -452,7 +490,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
         if self.drag_origin is None:
             return
         self.drag_origin = None
-        self.drag_finish_source = GLib.idle_add(self._finish_drag, None, None)
+        self.drag_finish_source = GLib.idle_add(self._finish_drag, None, None, None)
 
     def _tick(self, _widget, _clock):
         if self.closed:
@@ -476,7 +514,9 @@ class OverlayWindow(Gtk.ApplicationWindow):
             surface = self.get_surface()
             self.state.width = surface.get_width()
             self.state.height = surface.get_height()
-        self.state.save()
+        if not self.layer:
+            self.preferred.width, self.preferred.height = self.state.width, self.state.height
+        self.preferred.save()
         return GLib.SOURCE_REMOVE
 
     def _translate(self):

@@ -28,4 +28,5 @@
 - Provider and language flags override configuration only for that invocation.
 - Translation invocations toggle the single popup; clipboard-only invocations run independently. Provider-switching popup updates remain deferred.
 - Use layer-shell for independent popup placement on niri. Preserve remembered geometry, dragging between monitors, and proportional placement on disconnect.
+- Automatic monitor fallback must preserve the saved home and position, including across restarts and reconnections. Only dragging the header saves a new monitor and position; resizing updates remembered size.
 - Without layer-shell, let the compositor handle normal GTK window placement.
