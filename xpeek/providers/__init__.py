@@ -25,7 +25,7 @@ def _load_deepl(options: Dict[str, Any]) -> Translator:
 
 
 def _load_openai(options: Dict[str, Any]) -> Translator:
-    from .openai_provider import OpenAITranslator
+    from .openai import OpenAITranslator
 
     return OpenAITranslator(**options)
 
