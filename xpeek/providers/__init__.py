@@ -7,36 +7,36 @@ No other part of the application needs to change.
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
-from .base import Translator, TranslationError
+from .base import TranslationError, Translator
 
 
-def _load_google(options: Dict[str, Any]) -> Translator:
+def _load_google(options: dict[str, Any]) -> Translator:
     from .google import GoogleTranslator
 
     return GoogleTranslator(**options)
 
 
-def _load_deepl(options: Dict[str, Any]) -> Translator:
+def _load_deepl(options: dict[str, Any]) -> Translator:
     from .deepl import DeepLTranslator
 
     return DeepLTranslator(**options)
 
 
-def _load_openai(options: Dict[str, Any]) -> Translator:
+def _load_openai(options: dict[str, Any]) -> Translator:
     from .openai import OpenAITranslator
 
     return OpenAITranslator(**options)
 
 
-def _load_ollama(options: Dict[str, Any]) -> Translator:
+def _load_ollama(options: dict[str, Any]) -> Translator:
     from .ollama import OllamaTranslator
 
     return OllamaTranslator(**options)
 
 
-def _load_gemini(options: Dict[str, Any]) -> Translator:
+def _load_gemini(options: dict[str, Any]) -> Translator:
     from .gemini import GeminiTranslator
 
     return GeminiTranslator(**options)
@@ -53,7 +53,7 @@ PROVIDERS = {
 }
 
 
-def get_translator(name: str, provider_options: Dict[str, Any] | None = None) -> Translator:
+def get_translator(name: str, provider_options: dict[str, Any] | None = None) -> Translator:
     """Instantiate the translation provider registered under `name`."""
     provider_options = provider_options or {}
     loader = PROVIDERS.get(name)
@@ -66,4 +66,4 @@ def get_translator(name: str, provider_options: Dict[str, Any] | None = None) ->
     return loader(options)
 
 
-__all__ = ["Translator", "TranslationError", "get_translator", "PROVIDERS"]
+__all__ = ["PROVIDERS", "TranslationError", "Translator", "get_translator"]

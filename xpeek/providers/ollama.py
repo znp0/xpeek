@@ -1,7 +1,7 @@
 """Translation via a local Ollama server (no API key, no cloud dependency)."""
 from __future__ import annotations
 
-from .base import Translator, TranslationError, translation_instruction
+from .base import TranslationError, Translator, translation_instruction
 
 _LANG_NAMES = {
     "en": "English",

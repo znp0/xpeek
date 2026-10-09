@@ -47,7 +47,7 @@ def extract_text(image_path: Path) -> str:
         ocr = get_ocr_instance()
         # rapidocr returns (result, elapse)
         # result is a list of tuples: [([[box points]], text, confidence), ...]
-        result, elapse = ocr(str(image_path))
+        result, _elapse = ocr(str(image_path))
 
         if not result:
             return ""

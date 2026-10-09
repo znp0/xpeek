@@ -1,13 +1,12 @@
 """Remember popup geometry independently of OCR and translation settings."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
-
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 WINDOW_STATE_PATH = (
     Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
@@ -28,7 +27,7 @@ class WindowState:
     output_layout: dict[str, tuple[int, int, int, int]] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, path: Path = WINDOW_STATE_PATH) -> "WindowState":
+    def load(cls, path: Path = WINDOW_STATE_PATH) -> WindowState:
         try:
             raw = json.loads(path.read_text())
             state = cls(**raw)
@@ -47,7 +46,7 @@ class WindowState:
             if state.output is not None and not isinstance(state.output, str):
                 raise ValueError("Invalid output")
             if not isinstance(state.output_layout, dict):
-                raise ValueError("Invalid output layout")
+                raise TypeError("Invalid output layout")
             for name, bounds in state.output_layout.items():
                 if (not isinstance(name, str) or not isinstance(bounds, (list, tuple))
                         or len(bounds) != 4

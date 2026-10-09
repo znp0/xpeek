@@ -16,6 +16,7 @@ dependencies = [
 openai = ["openai>=1.0.0"]
 deepl = ["deep-translator>=1.11.0"]
 all = ["openai>=1.0.0", "deep-translator>=1.11.0"]
+dev = ["ruff>=0.16.10"]
 
 [project.scripts]
 xpeek = "xpeek.cli:main"
@@ -26,6 +27,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["xpeek", "xpeek.providers"]
+
+[tool.ruff]
+target-version = "py310"
 
 [project.urls]
 Repository = "https://github.com/znp0/xpeek"

@@ -5,6 +5,7 @@
 ## Development
 
 - Use `.venv/bin/python` for local checks. GTK bindings come from distro packages.
+- Use Ruff for Python linting; run `.venv/bin/python -m ruff check .` before committing Python changes.
 - `python3 setup.py install` creates or updates the managed environment and command symlink. Rerun it when changing the installed command or package version.
 - Preserve existing user configuration, saved region, window state, and history during install.
 - Do not add automatic configuration or state migrations unless explicitly requested.

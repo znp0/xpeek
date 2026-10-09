@@ -10,7 +10,7 @@ import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 try:
     from dotenv import load_dotenv
@@ -54,7 +54,7 @@ class Region:
         return f"{self.x},{self.y} {self.width}x{self.height}"
 
     @classmethod
-    def from_slurp_output(cls, raw: str) -> "Region":
+    def from_slurp_output(cls, raw: str) -> Region:
         """Parse slurp's 'X,Y WxH' output into a Region."""
         raw = raw.strip()
         try:
@@ -74,10 +74,10 @@ class Config:
     target_lang: str = "en"
     persistent_window: bool = False
     # Per-provider settings such as models and hosts; keys can come from .env.
-    provider_options: Dict[str, Any] = field(default_factory=dict)
+    provider_options: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, path: Path = CONFIG_PATH) -> "Config":
+    def load(cls, path: Path = CONFIG_PATH) -> Config:
         if not path.exists():
             raise ConfigError(
                 f"Config file not found: {path}. Run `python3 setup.py install` first."

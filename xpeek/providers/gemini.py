@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from .base import Translator, TranslationError, translation_instruction
+from .base import TranslationError, Translator, translation_instruction
 
 _LANG_NAMES = {
     "en": "English",
@@ -56,7 +56,7 @@ class GeminiTranslator(Translator):
             if hasattr(exc, 'response') and exc.response is not None:
                 try:
                     err_msg += f" - {exc.response.json()}"
-                except:
+                except ValueError:
                     err_msg += f" - {exc.response.text}"
             raise TranslationError(f"Gemini API request failed: {err_msg}") from exc
 

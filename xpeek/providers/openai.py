@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from .base import Translator, TranslationError, translation_instruction
+from .base import TranslationError, Translator, translation_instruction
 
 _LANG_NAMES = {
     "en": "English",

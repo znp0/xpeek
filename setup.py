@@ -5,15 +5,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import venv
 from dataclasses import asdict
+from pathlib import Path
 
-from xpeek.config import Config, CONFIG_PATH
+from xpeek.config import CONFIG_PATH, Config
 from xpeek.region_state import REGION_PATH
 from xpeek.window_state import WINDOW_STATE_PATH
 
@@ -116,7 +116,7 @@ except (ImportError, ValueError):
     print('normal-window')
 else:
     print('layer-shell')
-"""], capture_output=True, text=True,
+"""], capture_output=True, text=True, check=False,
     )
     if result.returncode:
         raise RuntimeError(
@@ -211,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     uninstall_parser.set_defaults(remove_config=False)
     args = parser.parse_args(argv)
-    if sys.version_info < (3, 10):
+    if sys.version_info < (3, 10):  # noqa: UP036 - setup may run before installing the package.
         parser.error("Python 3.10 or newer is required")
     try:
         if args.command == "install":

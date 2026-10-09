@@ -5,7 +5,6 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
 
 from .config import HISTORY_PATH
 
@@ -17,7 +16,7 @@ class HistoryEntry:
     translation: str
 
     @staticmethod
-    def now(ocr_text: str, translation: str) -> "HistoryEntry":
+    def now(ocr_text: str, translation: str) -> HistoryEntry:
         return HistoryEntry(
             timestamp=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             ocr_text=ocr_text,
@@ -34,9 +33,9 @@ class HistoryStore:
     def __init__(self, path: Path = HISTORY_PATH, limit: int = 100) -> None:
         self.path = path
         self.limit = limit
-        self.entries: List[HistoryEntry] = self._load()
+        self.entries: list[HistoryEntry] = self._load()
 
-    def _load(self) -> List[HistoryEntry]:
+    def _load(self) -> list[HistoryEntry]:
         if not self.path.exists():
             return []
         try:
@@ -66,5 +65,5 @@ class HistoryStore:
         self.entries = []
         self.save()
 
-    def all(self) -> List[HistoryEntry]:
+    def all(self) -> list[HistoryEntry]:
         return list(self.entries)

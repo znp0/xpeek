@@ -1,15 +1,15 @@
 """GTK4 translation popup, using layer-shell where available."""
 from __future__ import annotations
 
-from ctypes import CDLL
-from concurrent.futures import CancelledError, ThreadPoolExecutor
-from dataclasses import asdict, dataclass, replace
-from datetime import datetime
 import json
 import os
-from pathlib import Path
 import signal
 import sys
+from concurrent.futures import CancelledError, ThreadPoolExecutor
+from ctypes import CDLL
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime
+from pathlib import Path
 
 # Load layer-shell before GTK/libwayland, as required by its Python bindings.
 try:
@@ -98,7 +98,7 @@ def translation_result(
             return f"Translation error: {exc}", original, ""
         HistoryStore(limit=config.history_limit).add(original, translated)
         return "", original, translated
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Report worker failures in the popup.
         return f"Error: {exc}", original, ""
 
 
@@ -693,7 +693,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self._render_entries()
 
     def submit_translation(self, config, image, credentials=None):
-        heading = f"{datetime.now():%H:%M:%S} · {config.provider} · {config.source_lang} → {config.target_lang}"
+        heading = f"{datetime.now().astimezone():%H:%M:%S} · {config.provider} · {config.source_lang} → {config.target_lang}"
         entry = DisplayEntry(heading, "…")
         self.entries.append(entry)
         self.entries = self.entries[-DISPLAY_LIMIT:]
@@ -767,7 +767,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
             error, original, translated = future.result()
         except CancelledError:
             error, original, translated = "", "", ""
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Always release the application's worker hold.
             error, original, translated = str(exc), "", ""
         if not self.closed and entry in self.entries:
             entry.text = f"Error:\n{error}" if error else translated if original else "Could not detect any text."
@@ -880,7 +880,7 @@ def run_gui_translation(
                 window.submit_translation(current, image, request["credentials"])
                 image = None  # The worker owns the capture, including cleanup.
             return 0
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Return errors to the invoking CLI over D-Bus.
             message = f"Error: {exc}\n"
             printer = getattr(command, "printerr_literal", None)
             if printer is not None:

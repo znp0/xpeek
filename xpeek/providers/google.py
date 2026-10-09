@@ -4,9 +4,9 @@ from __future__ import annotations
 import json
 import urllib.parse
 import urllib.request
-from urllib.error import URLError, HTTPError
+from urllib.error import HTTPError, URLError
 
-from .base import Translator, TranslationError
+from .base import TranslationError, Translator
 
 
 class GoogleTranslator(Translator):

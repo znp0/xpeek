@@ -1,11 +1,11 @@
 """Persist the selected capture region separately from user settings."""
 from __future__ import annotations
 
-from dataclasses import asdict
 import json
 import os
-from pathlib import Path
 import tempfile
+from dataclasses import asdict
+from pathlib import Path
 
 from .config import ConfigError, Region
 
