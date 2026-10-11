@@ -7,8 +7,15 @@
   "ocr_engine": "paddleocr-tiny",
   "ocr_options": {
     "paddleocr-tiny": {
+      "capture_backend": "gamescope",
       "threads": 1,
       "scale": 1,
+      "preprocess": "none"
+    },
+    "paddleocr-small": {
+      "capture_backend": "desktop",
+      "threads": 1,
+      "scale": 0.5,
       "preprocess": "none"
     }
   },

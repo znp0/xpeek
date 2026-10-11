@@ -44,6 +44,7 @@ Set options by engine in config; omitted options use their defaults. For example
 
 | Option | Default | Accepted values |
 | --- | --- | --- |
+| `capture_backend` | `"desktop"` | `desktop` or `gamescope`; selected per engine, with a temporary `--capture-backend` override |
 | `threads` | `1` | Integer 1–4; controls inference/library parallelism, not the total count of idle OS threads |
 | `scale` | `1` | Finite positive factor; 1 preserves captured resolution, 0.5 halves each dimension |
 | `preprocess` | `"none"` | `"none"` keeps color; `"grayscale"` removes color |
@@ -56,4 +57,4 @@ Start with original color/resolution. Paddle small at 0.5× preserved dialogue w
 
 Translation's source/target flags do not select OCR language models. Recognition languages depend on each bundled model. Our tests focus on English gaming dialogue; other scripts and uses are not validated. Tesseract is no longer supported. Remove obsolete Tesseract settings manually if present; setup does not migrate config.
 
-Capture still uses `grim` with the selected desktop region. Native gamescope capture, automatic dialogue filtering, region presets, and speed/accuracy modes are not implemented.
+Capture defaults to `grim` on the selected desktop region. Optional [native gamescope capture](capture.md) maps that region into the game frame on supported niri layouts. OCR scaling and grayscale apply afterward. Automatic dialogue filtering, region presets, and speed/accuracy modes are not implemented.

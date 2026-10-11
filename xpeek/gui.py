@@ -10,6 +10,7 @@ from ctypes import CDLL
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from threading import Event
 
 # Load layer-shell before GTK/libwayland, as required by its Python bindings.
 try:
@@ -37,12 +38,11 @@ try:
 except (ImportError, ValueError):
     LayerShell = None
 
-from .capture import CaptureError, capture_region, select_region
+from .capture import CaptureCancelled, CaptureError, capture_screen, select_region
 from .config import Config, Region
 from .history import HistoryStore
 from .ocr import OcrError, extract_text, shutdown_backends
 from .providers import TranslationError, get_translator
-from .region_state import load_region
 from .window_state import MIN_HEIGHT, MIN_WIDTH, WindowState
 
 APPLICATION_ID = "io.github.znp0.xpeek"
@@ -63,16 +63,11 @@ class DisplayEntry:
 
 
 def translation_result(
-    config: Config, image: Path | None = None, credentials: dict | None = None
+    config: Config, image: Path, credentials: dict | None = None
 ) -> tuple[str, str, str]:
     """Perform blocking work without accessing GTK objects."""
     original = ""
     try:
-        try:
-            if image is None:
-                image = capture_region(load_region())
-        except CaptureError as exc:
-            return f"Capture error: {exc}", "", ""
         try:
             original = extract_text(image, config.ocr_engine, config.ocr_options.get(config.ocr_engine, {}))
         except OcrError as exc:
@@ -183,6 +178,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.entries = []
         self.rendered_entries = []
         self.jobs = {}
+        self.capture_jobs = set()
+        self.capture_cancelled = Event()
         self.scroll_source = None
         if not hasattr(app, "translation_executor"):
             # One worker keeps RapidOCR and history writes serialized, including
@@ -243,8 +240,6 @@ class OverlayWindow(Gtk.ApplicationWindow):
             if not self.entries:
                 self.entries.append(DisplayEntry("History", "No translation history."))
             self._render_entries()
-        elif mode == "translate":
-            self.submit_translation(config, capture_region(load_region()))
 
     def _build_content(self, window=None):
         window = self if window is None else window
@@ -789,6 +784,9 @@ class OverlayWindow(Gtk.ApplicationWindow):
         if self.closed:
             return
         self.closed = True
+        self.capture_cancelled.set()
+        for future in list(self.capture_jobs):
+            future.cancel()
         for future, image in list(self.jobs.items()):
             if future.cancel():
                 image.unlink(missing_ok=True)
@@ -823,6 +821,52 @@ def run_gui_translation(
     GLib.set_application_name("xpeek")
     sources = []
     window = None
+    local_exit_status = None
+    app.capture_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="xpeek-capture")
+
+    def print_error(command, message):
+        printer = getattr(command, "printerr_literal", None)
+        if printer is not None:
+            printer(message)
+        else:
+            print(message, end="", file=sys.stderr)
+
+    def capture_finished(target, current, request, command, future):
+        nonlocal local_exit_status
+        image = None
+        status = 0
+        target.capture_jobs.discard(future)
+        try:
+            result = future.result()
+            image = result.image
+            if not target.closed:
+                if result.warning:
+                    print_error(command, f"Warning: {result.warning}\n")
+                target.submit_translation(current, image, request["credentials"])
+                image = None  # The translation worker owns this image now.
+                if not target.get_visible():
+                    target.present()
+        except (CancelledError, CaptureCancelled):
+            pass
+        except Exception as exc:  # noqa: BLE001 - Return failures to the requesting CLI.
+            status = 1
+            print_error(command, f"Error: {exc}\n")
+            if not target.closed and not target.entries and not target.capture_jobs:
+                target.dismiss()
+        finally:
+            if image is not None:
+                image.unlink(missing_ok=True)
+            command.set_exit_status(status)
+            if not command.get_is_remote():
+                # GApplication.run() retains the initial handler's synchronous
+                # status for the primary process; preserve its deferred result.
+                local_exit_status = status
+            done = getattr(command, "done", None)
+            if done is not None:
+                done()
+            # Older GLib completes the command when this retained reference is released.
+            app.release()
+        return GLib.SOURCE_REMOVE
 
     def startup(application):
         css = Gtk.CssProvider()
@@ -847,7 +891,6 @@ def run_gui_translation(
 
     def command_line(application, command):
         nonlocal window
-        image = None
         try:
             if application.get_dbus_connection() is None:
                 raise RuntimeError("No accessible session D-Bus; cannot manage a single popup.")
@@ -867,32 +910,38 @@ def run_gui_translation(
                     Region(**request["region"]) if request["region"] else None)
                 if selected is None:
                     raise CaptureError("No region has been saved yet. Run `xpeek select` first.")
-                # Capture immediately, even if an earlier translation is slow.
-                image = capture_region(selected)
             if window is None:
                 current = replace(current, persistent_window=append)
                 window = OverlayWindow(application, current, "last" if request["mode"] == "last" else "empty",
                                        display_limit=request.get("display_limit", DISPLAY_LIMIT))
-                window.present()
+                if request["mode"] == "last":
+                    window.present()
             elif append:
                 window.enable_persistent()
-            if image is not None:
-                window.submit_translation(current, image, request["credentials"])
-                image = None  # The worker owns the capture, including cleanup.
+            if request["mode"] != "last":
+                # A separate worker captures every request before queued OCR work.
+                target = window
+                application.hold()
+                try:
+                    future = app.capture_executor.submit(
+                        capture_screen, selected, current.capture_backend,
+                        display=request.get("gamescope_display"), cancelled=target.capture_cancelled,
+                    )
+                except Exception:
+                    application.release()
+                    raise
+                target.capture_jobs.add(future)
+                future.add_done_callback(lambda completed: GLib.idle_add(
+                    capture_finished, target, current, request, command, completed))
             return 0
         except Exception as exc:  # noqa: BLE001 - Return errors to the invoking CLI over D-Bus.
             message = f"Error: {exc}\n"
-            printer = getattr(command, "printerr_literal", None)
-            if printer is not None:
-                printer(message)
-            else:
-                print(message, end="", file=sys.stderr)
+            print_error(command, message)
             if window is None:
                 application.quit()
+            elif not window.get_visible() and not window.entries and not window.capture_jobs:
+                window.dismiss()
             return 1
-        finally:
-            if image is not None:
-                image.unlink(missing_ok=True)
 
     app.connect("startup", startup)
     app.connect("command-line", command_line)
@@ -902,11 +951,14 @@ def run_gui_translation(
         request = {"config": asdict(config), "mode": mode, "persistent": persistent,
                    "region": asdict(region) if region is not None else None,
                    "temporary": temporary, "display_limit": display_limit,
+                   "gamescope_display": os.environ.get("GAMESCOPE_WAYLAND_DISPLAY"),
                    "credentials": {name: os.environ.get(name) for name in API_KEY_ENV.values()}}
-        return app.run(["xpeek", json.dumps(request)])
+        status = app.run(["xpeek", json.dumps(request)])
+        return status if local_exit_status is None else local_exit_status
     finally:
         for source in sources:
             GLib.source_remove(source)
+        app.capture_executor.shutdown(wait=True)
         executor = getattr(app, "translation_executor", None)
         if executor is not None:
             executor.shutdown(wait=True)

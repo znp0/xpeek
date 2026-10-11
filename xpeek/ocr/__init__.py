@@ -8,7 +8,7 @@ from typing import Any
 
 from .runtime import ENGINES, runtime_root
 
-DEFAULTS = {"threads": 1, "scale": 1, "preprocess": "none"}
+DEFAULTS = {"threads": 1, "scale": 1, "preprocess": "none", "capture_backend": "desktop"}
 
 
 class OcrError(RuntimeError):
@@ -32,6 +32,8 @@ def validated_options(engine: str, options: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("OCR scale must be a finite positive number")
     if values["preprocess"] not in ("none", "grayscale"):
         raise ValueError("OCR preprocess must be none or grayscale")
+    if values["capture_backend"] not in ("desktop", "gamescope"):
+        raise ValueError("OCR capture_backend must be desktop or gamescope")
     return values
 
 
@@ -47,6 +49,8 @@ def extract_text(image_path: Path, engine: str = "rapidocr", options: dict[str, 
     """Recognize lines without importing unused backends."""
     try:
         settings = validated_options(engine, {} if options is None else options)
+        # Capture has already completed; reader kwargs contain only inference settings.
+        settings.pop("capture_backend")
         marker = runtime_root().parent / ".xpeek-install.json"
         if marker.is_file():
             installed = json.loads(marker.read_text()).get("ocr_engines")

@@ -80,6 +80,11 @@ class Config:
     # Per-provider settings such as models and hosts; keys can come from .env.
     provider_options: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def capture_backend(self) -> str:
+        """Capture settings follow the selected engine, including CLI overrides."""
+        return self.ocr_options.get(self.ocr_engine, {}).get("capture_backend", "desktop")
+
     @classmethod
     def load(cls, path: Path = CONFIG_PATH) -> Config:
         if not path.exists():

@@ -7,13 +7,53 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 
 from .config import Region
 
 
 class CaptureError(RuntimeError):
     """Raised when screenshot or region-selection tooling fails."""
+
+
+class CaptureCancelled(CaptureError):
+    """The requesting popup closed before capture completed."""
+
+
+@dataclass(frozen=True)
+class CaptureResult:
+    image: Path
+    backend: str
+    warning: str | None = None
+
+
+def capture_screen(
+    region: Region, backend: str = "desktop", *, display: str | None = None,
+    cancelled: Event | None = None,
+) -> CaptureResult:
+    """Capture natively when requested, falling back to the desktop on failure."""
+    if cancelled is not None and cancelled.is_set():
+        raise CaptureCancelled("Capture cancelled")
+    warning = None
+    if backend == "gamescope":
+        from .gamescope_capture import capture_native
+        try:
+            return CaptureResult(capture_native(region, display, cancelled), "gamescope")
+        except CaptureCancelled:
+            raise
+        except CaptureError as exc:
+            warning = f"Gamescope capture unavailable ({exc}); using desktop capture."
+    elif backend != "desktop":
+        raise CaptureError("Unknown capture backend")
+    if cancelled is not None and cancelled.is_set():
+        raise CaptureCancelled("Capture cancelled")
+    image = capture_region(region)
+    if cancelled is not None and cancelled.is_set():
+        image.unlink(missing_ok=True)
+        raise CaptureCancelled("Capture cancelled")
+    return CaptureResult(image, "desktop", warning)
 
 
 def _require_binary(name: str) -> str:
@@ -75,17 +115,20 @@ def capture_region(region: Region, out_path: Path | None = None) -> Path:
             capture_output=True,
             text=True,
             check=False,
+            timeout=3,
         )
         if result.returncode != 0:
             stderr = result.stderr.strip()
             raise CaptureError(f"grim failed to capture region: {stderr or 'unknown error'}")
         if not out_path.exists() or out_path.stat().st_size == 0:
             raise CaptureError("grim produced no output image")
-    except (OSError, CaptureError) as exc:
+    except (OSError, CaptureError, subprocess.TimeoutExpired) as exc:
         if temporary:
             out_path.unlink(missing_ok=True)
         if isinstance(exc, CaptureError):
             raise
+        if isinstance(exc, subprocess.TimeoutExpired):
+            raise CaptureError("Desktop capture timed out") from exc
         raise CaptureError(f"Failed to capture region: {exc}") from exc
 
     return out_path

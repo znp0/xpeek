@@ -11,11 +11,12 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from dataclasses import replace
 
 from . import __version__
-from .capture import CaptureError, capture_region, select_region
+from .capture import CaptureError, capture_screen, select_region
 from .clipboard import ClipboardError, copy_text
 from .config import HISTORY_PATH, Config, ConfigError, Region
 from .history import HistoryStore
@@ -100,12 +101,19 @@ def cmd_ocr(args: argparse.Namespace) -> int:
 
 def _ocr_config(args: argparse.Namespace) -> Config:
     config = Config.load()
-    return replace(config, ocr_engine=args.ocr_engine) if args.ocr_engine is not None else config
+    config = replace(config, ocr_engine=args.ocr_engine or config.ocr_engine)
+    if args.capture_backend is not None:
+        options = {**config.ocr_options.get(config.ocr_engine, {}), "capture_backend": args.capture_backend}
+        config = replace(config, ocr_options={**config.ocr_options, config.ocr_engine: options})
+    return config
 
 
 def _ocr_to_clipboard(config: Config, region: Region) -> int:
     try:
-        image_path = capture_region(region)
+        capture = capture_screen(region, config.capture_backend, display=os.environ.get("GAMESCOPE_WAYLAND_DISPLAY"))
+        image_path = capture.image
+        if capture.warning:
+            print(f"Warning: {capture.warning}", file=sys.stderr)
         try:
             text = extract_text(image_path, config.ocr_engine, config.ocr_options.get(config.ocr_engine, {}))
         finally:
@@ -179,6 +187,11 @@ def build_parser() -> argparse.ArgumentParser:
             help="Override the configured OCR engine without saving; install engines with setup.py",
         )
         command_parser.add_argument(
+            "--capture-backend", choices=("desktop", "gamescope"), default=None,
+            help=("Override the selected OCR engine's capture setting without saving (initially desktop); gamescope uses native "
+                  "resolution on supported niri layouts, otherwise desktop with a terminal warning"),
+        )
+        command_parser.add_argument(
             "-s", "--source-lang", metavar="CODE", type=_source_language, default=None,
             help=(
                 "Source language, e.g. en, or auto/detect for automatic detection; "
@@ -207,6 +220,8 @@ def build_parser() -> argparse.ArgumentParser:
             "                        clipboard copies OCR text without translation.\n"
             "  --ocr-engine {" + ",".join(ENGINES) + "}\n"
             "                        OCR engine (configured default, chosen during install).\n"
+            "  --capture-backend {desktop,gamescope}\n"
+            "                        Native gamescope capture or desktop (selected engine's setting).\n"
             "  -s, --source-lang CODE Source language; auto/detect requests detection.\n"
             "  -t, --target-lang CODE Target language for translation (configured default).\n\n"
             "  --persistent          Keep the popup open and append translations (latest 10).\n"
@@ -219,6 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  xpeek translate -s auto -t vi\n"
             "  xpeek translate --provider=clipboard\n"
             "  xpeek translate --ocr-engine paddleocr-tiny\n"
+            "  xpeek translate --capture-backend gamescope\n"
             "  xpeek ocr\n"
             "  xpeek ocr --ocr-engine paddleocr-small\n"
             "  xpeek ocr -p gemini -s auto -t en\n\n"
@@ -259,7 +275,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  xpeek translate -s en -t ja\n"
             "  xpeek translate -s auto -t vi\n"
             "  xpeek translate --provider=clipboard\n"
-            "  xpeek translate --ocr-engine paddleocr-tiny\n\n"
+            "  xpeek translate --ocr-engine paddleocr-tiny\n"
+            "  xpeek translate --capture-backend gamescope\n\n"
             "Use xpeek ocr -p PROVIDER to translate a temporary region."
         ),
     )
@@ -292,7 +309,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  xpeek ocr -p google             # temporary region -> translation\n"
             "  xpeek ocr -p google --persistent # append a temporary-region translation\n"
             "  xpeek ocr -p gemini -s auto -t en\n"
-            "  xpeek ocr --ocr-engine paddleocr-small\n\n"
+            "  xpeek ocr --ocr-engine paddleocr-small\n"
+            "  xpeek ocr --capture-backend gamescope\n\n"
             "Use translate -p=clipboard to copy text from the saved region."
         ),
     )

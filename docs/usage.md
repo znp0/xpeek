@@ -16,7 +16,7 @@ Run `xpeek --help` or `xpeek COMMAND --help` for available flags and examples. U
 
 ## Flags and clipboard
 
-Both `translate` and `ocr` accept `-p` / `--provider`, `--ocr-engine`, `-s` / `--source-lang`, `-t` / `--target-lang`, and `--persistent` / `--no-persistent`. Flags apply only to that invocation and never write config. `translate` defaults to the configured provider; `ocr` defaults to `clipboard`. Engines must be selected during setup.
+Both `translate` and `ocr` accept `-p` / `--provider`, `--ocr-engine`, `--capture-backend {desktop,gamescope}`, `-s` / `--source-lang`, `-t` / `--target-lang`, and `--persistent` / `--no-persistent`. Flags apply only to that invocation and never write config. `translate` defaults to the configured provider; `ocr` defaults to `clipboard`. Engines must be selected during setup. Switching engines also selects its capture setting from `ocr_options`; `--capture-backend` temporarily overrides it. Native gamescope capture reuses the selected region on supported niri layouts; see the [capture guide](capture.md). Fallback warnings appear only in the invoking terminal, including popup requests.
 
 Source `auto` or `detect` requests translation-language detection; language codes depend on the provider. These flags do not change OCR recognition languages. Clipboard mode copies original OCR text, ignores language/persistence flags, and runs independently of the popup. Empty OCR leaves the clipboard unchanged. Successful copies send a notification when `notify-send` and a notification daemon are available. Clipboard-only calls do not enter translation history.
 

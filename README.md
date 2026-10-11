@@ -49,6 +49,7 @@ xpeek --version                      # Show the installed version
 xpeek translate                      # Translate the saved region
 xpeek translate --persistent         # Append to one popup, keeping the latest 10
 xpeek translate --ocr-engine paddleocr-small
+xpeek translate --capture-backend gamescope # Capture native game pixels on niri
 xpeek translate -p gemini -s auto -t vi
 xpeek translate -p clipboard          # Copy text from the saved region
 xpeek ocr                            # Select a temporary region and copy text
@@ -82,23 +83,24 @@ Set `ocr_engine` to your default engine; `--ocr-engine` overrides it for one com
 
 | Option | Default | Usage |
 | --- | --- | --- |
+| `capture_backend` | `"desktop"` | `"desktop"` captures the displayed region; `"gamescope"` captures native game pixels on supported niri layouts, with desktop fallback. |
 | `threads` | `1` | Integer 1–4. More threads can reduce processing time but increase CPU use; our tests favored one thread. This is not an OS CPU quota. |
 | `scale` | `1` | Positive factor applied before OCR: `0.5` halves width and height, `1` keeps captured resolution. Downscaling uses area interpolation; enlarging uses cubic. |
 | `preprocess` | `"none"` | Keep color with `"none"`, or use `"grayscale"` after resizing. Grayscale can change word boundaries and meaning. |
 
-Merge these settings into your config for Tiny at original resolution and Small at half resolution:
+Merge these settings into your config for Tiny at native gamescope resolution and Small at half desktop resolution:
 
 ```json
 {
   "ocr_engine": "paddleocr-tiny",
   "ocr_options": {
-    "paddleocr-tiny": {"threads": 1, "scale": 1, "preprocess": "none"},
-    "paddleocr-small": {"threads": 1, "scale": 0.5, "preprocess": "none"}
+    "paddleocr-tiny": {"capture_backend": "gamescope", "threads": 1, "scale": 1, "preprocess": "none"},
+    "paddleocr-small": {"capture_backend": "desktop", "threads": 1, "scale": 0.5, "preprocess": "none"}
   }
 }
 ```
 
-Then use `xpeek translate --ocr-engine paddleocr-small` to try the Small settings. Omitted engine settings use the defaults; RapidOCR also starts with one thread, original resolution, and color.
+Then use `xpeek translate --ocr-engine paddleocr-small` to switch capture and OCR settings together. Omitted engine settings use desktop capture, one thread, original resolution, and color. These example combinations follow the Wuthering Waves results; compare your own dialogue before adopting them.
 
 Tested on an Intel Core i7-12700H using 25 desktop captures of Wuthering Waves, rendered at 1280 × 800 and upscaled to 2560 × 1600. Warm OCR medians exclude startup, capture, and translation:
 
@@ -111,4 +113,4 @@ Tested on an Intel Core i7-12700H using 25 desktop captures of Wuthering Waves, 
 
 Small at `0.5` gave the best tested accuracy/speed balance without manual cropping on those upscaled images. Keep Tiny at `1`; grayscale sometimes changed a direction or subject, so color remains the default. Testing covered only Wuthering Waves on one machine; other games are untested. Compare your own dialogue before adopting reduced resolution. See the [OCR guide](docs/ocr.md) and [full benchmark results](docs/benchmarks.md), including native-resolution comparisons.
 
-Capture currently uses `grim` on the selected desktop region, including any gamescope upscaling. There is no gamescope screenshot option in `0.12.0`; `scale: 0.5` resizes an already-captured image. Native gamescope capture is planned separately, with saved-region coordinate mapping and a desktop fallback.
+Capture defaults to `grim`, including gamescope upscaling. Set `capture_backend: "gamescope"` inside an engine's `ocr_options` or use `--capture-backend gamescope` for native-resolution capture on supported niri layouts. The saved or temporary region is mapped into the native game frame; unavailable capture falls back to desktop with a terminal warning. Start with OCR `scale: 1`, since scaling applies after capture. See the [capture guide](docs/capture.md) for setup and limitations.

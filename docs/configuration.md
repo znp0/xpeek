@@ -2,7 +2,7 @@
 
 Setup creates `$XDG_CONFIG_HOME/xpeek/config.json` (default `~/.config/xpeek/config.json`). Edit it using [config.example.json](../config.example.json). The example is not loaded automatically. If config is missing, rerun setup.
 
-New configs use Google, `source_lang: "auto"`, `target_lang: "en"`, `persistent_window: false`, `history_limit: 100`, and empty `provider_options` / `ocr_options`. The initial `ocr_engine` is chosen among installed engines in this order: Paddle tiny, RapidOCR, Paddle small. Setup preserves existing config, including its engine choice.
+New configs use Google, `source_lang: "auto"`, `target_lang: "en"`, `persistent_window: false`, `history_limit: 100`, and empty `provider_options` / `ocr_options`. Omitted engine options use desktop capture. The initial `ocr_engine` is chosen among installed engines in this order: Paddle tiny, RapidOCR, Paddle small. Setup preserves existing config, including its engine choice.
 
 | Setting | Purpose |
 | --- | --- |
@@ -11,10 +11,12 @@ New configs use Google, `source_lang: "auto"`, `target_lang: "en"`, `persistent_
 | `persistent_window` | Start new popups in append mode |
 | `history_limit` | Maximum saved history entries |
 | `ocr_engine` | Installed OCR engine; see the [OCR guide](ocr.md) |
-| `ocr_options` | Settings keyed by OCR engine |
+| `ocr_options` | Settings keyed by OCR engine, including `capture_backend` (`desktop` by default or `gamescope`); see the [OCR guide](ocr.md) and [capture guide](capture.md) |
 | `provider_options` | Non-secret settings keyed by translation provider |
 
-Provider/language/engine/persistence flags override these settings for one invocation. An unavailable engine reports an error; xpeek never silently chooses another.
+Provider/language/engine/capture/persistence flags override these settings for one invocation. An unavailable engine reports an error; xpeek never silently chooses another OCR engine. Gamescope capture may fall back to desktop, with a warning on stderr.
+
+Switching `--ocr-engine` selects that engine's capture and preprocessing options together. `--capture-backend` temporarily overrides the selected engine's capture setting without changing its saved options or another engine's settings. `capture_backend` is not a top-level config field.
 
 ## Keys and provider options
 
