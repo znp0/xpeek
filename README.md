@@ -55,6 +55,7 @@ xpeek translate -p clipboard          # Copy text from the saved region
 xpeek ocr                            # Select a temporary region and copy text
 xpeek ocr -p google                   # Translate a temporary region
 xpeek show-history -n 10              # Open recent translations
+xpeek reset-size                      # Restore default popup sizes
 xpeek history --watch                 # Watch history in a scrollable terminal view
 ```
 

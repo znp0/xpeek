@@ -120,7 +120,14 @@ class WindowState:
             self.y = round(y * new_height / old_height)
         self.clamp(new_width, new_height)
 
-    def save(self, path: Path = WINDOW_STATE_PATH) -> None:
+    def reset_size(self) -> None:
+        """Restore both popup sizes without changing placement."""
+        defaults = WindowState()
+        self.width = defaults.width
+        self.height = defaults.height
+        self.persistent_height = defaults.persistent_height
+
+    def save(self, path: Path = WINDOW_STATE_PATH) -> bool:
         temporary = None
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,11 +137,19 @@ class WindowState:
                 json.dump(asdict(self), handle, indent=2)
                 handle.write("\n")
             temporary.replace(path)
+            return True
         except OSError as exc:
             print(f"Could not save popup state: {exc}", file=sys.stderr)
+            return False
         finally:
             if temporary is not None:
                 try:
                     temporary.unlink(missing_ok=True)
                 except OSError:
                     pass
+
+
+def reset_saved_size() -> bool:
+    state = WindowState.load()
+    state.reset_size()
+    return state.save()

@@ -38,14 +38,14 @@ try:
 except (ImportError, ValueError):
     LayerShell = None
 
+from . import APPLICATION_ID
 from .capture import CaptureCancelled, CaptureError, capture_screen, select_region
 from .config import Config, Region
 from .history import HistoryStore
 from .ocr import OcrError, extract_text, shutdown_backends
 from .providers import TranslationError, get_translator
-from .window_state import MIN_HEIGHT, MIN_WIDTH, WindowState
+from .window_state import MIN_HEIGHT, MIN_WIDTH, WindowState, reset_saved_size
 
-APPLICATION_ID = "io.github.znp0.xpeek"
 DISPLAY_LIMIT = 10
 API_KEY_ENV = {"deepl": "DEEPL_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 
@@ -687,6 +687,28 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self._queue_save()
         self._render_entries()
 
+    def reset_size(self):
+        self._cancel_drag_for_layout()
+        if self.drag_finish_source is not None:
+            GLib.source_remove(self.drag_finish_source)
+            self.drag_finish_source = None
+        self.drag_position = None
+        self.drag_target = None
+        if self.save_source is not None:
+            GLib.source_remove(self.save_source)
+            self.save_source = None
+        saved = replace(self.preferred)
+        saved.reset_size()
+        self.normal_height = saved.height
+        self.persistent_height = saved.persistent_height
+        self.preferred = replace(saved, height=(saved.persistent_height if self.persistent else saved.height))
+        self.state.width, self.state.height = self.preferred.width, self.preferred.height
+        if self.layer:
+            self._apply_geometry()
+        else:
+            self.set_default_size(self.state.width, self.state.height)
+        return saved.save()
+
     def submit_translation(self, config, image, credentials=None):
         heading = f"{datetime.now().astimezone():%H:%M:%S} · {config.provider} · {config.source_lang} → {config.target_lang}"
         entry = DisplayEntry(heading, "…")
@@ -895,6 +917,9 @@ def run_gui_translation(
             if application.get_dbus_connection() is None:
                 raise RuntimeError("No accessible session D-Bus; cannot manage a single popup.")
             request = json.loads(command.get_arguments()[1])
+            if request["mode"] == "reset-size":
+                success = window.reset_size() if window is not None and not window.closed else reset_saved_size()
+                return 0 if success else 1
             requested = request["persistent"]
             if window is not None and window.closed:
                 window = None

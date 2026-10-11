@@ -10,6 +10,7 @@ Run `xpeek --help` or `xpeek COMMAND --help` for available flags and examples. U
 | `ocr` | Select a temporary region and copy text without changing the saved region |
 | `ocr -p PROVIDER` | Translate a temporary region |
 | `show-history [-n N]` | Open the latest N translations in a popup; default 10 |
+| `reset-size` | Restore default popup sizes, keeping position and content |
 | `history [-n N]` | Print saved OCR text and translations; default all |
 | `history --watch [-n N]` | Watch recent entries in a scrollable terminal view; default 10 |
 | `clear-history` | Remove saved translation history |
@@ -25,6 +26,8 @@ Source `auto` or `detect` requests translation-language detection; language code
 Only one translation popup is used. In normal mode, a translation invocation closes an existing popup and exits; call it again to translate. `--persistent` enables appending, retaining the latest 10 entries with scrolling. Later calls inherit the open popup's mode, including calls with another provider or OCR engine. `--no-persistent` restores normal behavior and closes an existing popup.
 
 Persistent appending follows new entries only while already at the bottom. Scrolling up preserves the reading position. Trimming old display entries never removes saved history. Persistent and normal heights are remembered separately; their initial heights are 700 and 400 logical pixels.
+
+`xpeek reset-size` restores the width to 500 and both heights to their defaults, in logical pixels. An open popup resizes immediately without changing its position, content, or mode. With no popup open, the command only updates saved sizes for the next opening.
 
 `show-history` displays entries chronologically and starts at the bottom. Its positive `-n` / `--limit` does not change persistent mode's 10-entry limit. If a popup is already open, `show-history` closes it and exits. The close button or Escape when focused also closes the popup.
 

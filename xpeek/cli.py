@@ -5,17 +5,19 @@ Commands:
     xpeek translate       -- capture saved region -> OCR -> translate -> print
     xpeek ocr             -- select temporary region -> OCR -> copy or translate
     xpeek show-history    -- show latest 10 translations in a popup
+    xpeek reset-size      -- restore default popup sizes, keeping placement
     xpeek history         -- print translation history in the terminal
     xpeek clear-history   -- wipe translation history
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from dataclasses import replace
 
-from . import __version__
+from . import APPLICATION_ID, __version__
 from .capture import CaptureError, capture_screen, select_region
 from .clipboard import ClipboardError, copy_text
 from .config import HISTORY_PATH, Config, ConfigError, Region
@@ -162,6 +164,23 @@ def cmd_history(args: argparse.Namespace) -> int:
         print(f"  Translation: {entry.translation}")
         print()
     return 0
+
+
+def cmd_reset_size(args: argparse.Namespace) -> int:
+    # Gio forwards to an open popup; otherwise reset state without opening GTK.
+    try:
+        from gi.repository import Gio
+    except ImportError as exc:
+        print(f"Error loading PyGObject: {exc}", file=sys.stderr)
+        return 1
+    from .window_state import reset_saved_size
+    app = Gio.Application(application_id=APPLICATION_ID,
+                          flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+    app.connect("command-line", lambda *_args: 0 if reset_saved_size() else 1)
+    status = app.run(["xpeek", json.dumps({"mode": "reset-size"})])
+    if status == 0:
+        print("Popup sizes restored to defaults.")
+    return status
 
 
 def cmd_clear_history(args: argparse.Namespace) -> int:
@@ -330,6 +349,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show the latest N saved translations; positive integer (default: 10)",
     )
     p_show_history.set_defaults(func=cmd_show_history)
+
+    p_reset = subparsers.add_parser(
+        "reset-size", help="Restore default popup sizes, keeping position",
+        description=("Restore the 500-pixel width and the normal/persistent heights "
+                     "of 400/700 logical pixels. Resize an open popup immediately, "
+                     "keeping its position, content, and mode; otherwise save for the next opening."),
+    )
+    p_reset.set_defaults(func=cmd_reset_size)
 
     p_history = subparsers.add_parser(
         "history", help="Print or watch translation history in the terminal",
