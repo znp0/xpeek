@@ -25,7 +25,7 @@ python3 setup.py install --ocr-engines all # Install all three engines
 
 Press Enter to accept the displayed engine selection (tiny on a fresh install; previous engines on updates). Non-interactive installs require `--ocr-engines`; missing or empty selections fail.
 
-The installer creates `.venv`, downloads selected models/dependencies, links `~/.local/bin/xpeek`, and creates `~/.config/xpeek/config.json` if missing. Use distro Python; setup needs no `sudo`. Keep the checkout in place and rerun setup after updates. Existing config, saved region, popup geometry, and history are preserved. If needed, add `~/.local/bin` to your PATH:
+The installer creates `.venv`, downloads selected models/dependencies, links `~/.local/bin/xpeek`, and creates `~/.config/xpeek/config.json` if missing, with a GitHub schema reference pinned to the installed version. Reinstalling updates only `$schema` in existing config; other settings, saved region, popup geometry, and history are preserved. Use distro Python; setup needs no `sudo`. Keep the checkout in place. If needed, add `~/.local/bin` to your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -40,6 +40,19 @@ python3 setup.py uninstall --remove-config # Also remove config, region, and pop
 ```
 
 Removing engines keeps config unchanged and requires at least one engine to remain; update `ocr_engine` if you remove its engine. Uninstall removes the managed environments, model downloads/caches, and command symlink. History and unrelated files are preserved; distro packages are managed separately. Clipboard notifications are optional and require `notify-send` plus a desktop notification daemon.
+
+## Update
+
+Close any open popup, then run from any directory:
+
+```bash
+xpeek update
+xpeek update --tag vX.Y.Z # Optional: choose a published release tag
+```
+
+Update fetches the latest stable [GitHub release](https://github.com/znp0/xpeek/releases), checks it out, and runs its installer without an engine prompt. It requires a clean git checkout and keeps installed engines unless `--ocr-engines` is supplied. Newer development versions are kept unless `--tag` explicitly selects an older release. Setup refreshes the version-specific schema reference while preserving other settings and state. From the checkout, `python3 setup.py update` performs the same update.
+
+Verified models are reused; missing, changed, or corrupted model files are downloaded again. Dependency checks and the headless OpenCV repair step still run during installation.
 
 ## Use
 
@@ -63,7 +76,7 @@ Normal translation calls toggle the single popup. Persistent mode appends result
 
 ## Configure
 
-Edit `~/.config/xpeek/config.json`; see [config.example.json](config.example.json) and the [configuration guide](docs/configuration.md). Translation starts with automatic source detection → English, using Google without an API key. Other providers are DeepL, OpenAI, Gemini, and Ollama.
+Edit `~/.config/xpeek/config.json`; see [config.example.json](config.example.json), its [JSON Schema](config.schema.json), and the [configuration guide](docs/configuration.md). Translation starts with automatic source detection → English, using Google without an API key. Other providers are DeepL, OpenAI, Gemini, and Ollama.
 
 Keep API keys in environment variables or the checkout's ignored `.env`:
 

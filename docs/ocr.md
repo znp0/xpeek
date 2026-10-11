@@ -1,6 +1,6 @@
 # OCR engines
 
-Run `python3 setup.py install` to choose one or more engines. Enter comma-separated numbers or names, or `all` for all three; Enter accepts the displayed selection (tiny on fresh installs, already-installed engines on updates). Non-interactive installs require `--ocr-engines`; missing or empty values fail. Unselected engines are removed from this managed installation; an existing config is preserved, so adjust `ocr_engine` if you remove its engine.
+Run `python3 setup.py install` to choose one or more engines. Enter comma-separated numbers or names, or `all` for all three; Enter accepts the displayed selection (tiny on fresh installs, already-installed engines on updates). Non-interactive installs require `--ocr-engines`; missing or empty values fail. Unselected engines are removed from this managed installation; existing config settings are preserved while `$schema` is refreshed, so adjust `ocr_engine` if you remove its engine.
 
 ```bash
 python3 setup.py install --ocr-engines rapidocr,paddleocr-tiny,paddleocr-small

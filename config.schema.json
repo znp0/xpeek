@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/znp0/xpeek/main/config.schema.json",
+  "title": "xpeek configuration",
+  "description": "Screen text capture, OCR, translation, and popup settings. Saved regions and popup geometry belong in state files.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Schema URL or path for editor validation; ignored by xpeek."
+    },
+    "history_limit": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 100,
+      "description": "Maximum number of saved translation history entries."
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["google", "deepl", "openai", "gemini", "ollama", "clipboard"],
+      "default": "google",
+      "description": "Default translation provider; clipboard copies original OCR text."
+    },
+    "source_lang": {
+      "type": "string",
+      "minLength": 1,
+      "default": "auto",
+      "examples": ["auto", "en", "ja"],
+      "description": "Source translation language; auto or detect requests detection. Supported codes depend on the provider, independently of OCR models."
+    },
+    "target_lang": {
+      "type": "string",
+      "minLength": 1,
+      "default": "en",
+      "examples": ["en", "vi"],
+      "description": "Target translation language code supported by the provider."
+    },
+    "persistent_window": {
+      "type": "boolean",
+      "default": false,
+      "description": "Start new popups in append mode, retaining the latest 10 translations with scrolling."
+    },
+    "ocr_engine": {
+      "type": "string",
+      "enum": ["rapidocr", "paddleocr-tiny", "paddleocr-small"],
+      "default": "rapidocr",
+      "description": "Default installed OCR engine. Setup chooses tiny, then RapidOCR, then small among installed engines for a new config."
+    },
+    "ocr_options": {
+      "type": "object",
+      "default": {},
+      "additionalProperties": false,
+      "description": "Capture and preprocessing settings selected together with each OCR engine.",
+      "properties": {
+        "rapidocr": {"$ref": "#/$defs/ocrOptions"},
+        "paddleocr-tiny": {"$ref": "#/$defs/ocrOptions"},
+        "paddleocr-small": {"$ref": "#/$defs/ocrOptions"}
+      }
+    },
+    "provider_options": {
+      "type": "object",
+      "default": {},
+      "additionalProperties": false,
+      "description": "Per-provider settings. Keep API keys in environment variables or .env when sharing configuration.",
+      "properties": {
+        "google": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Google Translate needs no provider options or API key."
+        },
+        "deepl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "api_key": {"$ref": "#/$defs/apiKey", "description": "Empty or null uses DEEPL_API_KEY."}
+          }
+        },
+        "openai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "api_key": {"$ref": "#/$defs/apiKey", "description": "Empty or null uses OPENAI_API_KEY."},
+            "model": {"type": "string", "minLength": 1, "default": "gpt-4o-mini", "description": "Chat completion model name."},
+            "base_url": {"type": ["string", "null"], "minLength": 1, "default": null, "description": "OpenAI-compatible API endpoint; null uses the SDK default."}
+          }
+        },
+        "gemini": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "api_key": {"$ref": "#/$defs/apiKey", "description": "Empty or null uses GEMINI_API_KEY."},
+            "model": {"type": "string", "minLength": 1, "default": "gemini-3.1-flash-lite", "description": "Gemini model name."}
+          }
+        },
+        "ollama": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {"type": "string", "minLength": 1, "default": "http://localhost:11434", "description": "Ollama server URL."},
+            "model": {"type": "string", "minLength": 1, "default": "llama3.1", "description": "Installed Ollama model name."},
+            "num_gpu": {"type": ["integer", "null"], "default": null, "description": "Ollama GPU-layer setting; 0 uses CPU and null leaves the server default."}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "apiKey": {
+      "type": ["string", "null"],
+      "default": "",
+      "description": "Optional API key override. Keep empty or null to use the provider's environment variable."
+    },
+    "ocrOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capture_backend": {
+          "type": "string",
+          "enum": ["desktop", "gamescope"],
+          "default": "desktop",
+          "description": "Desktop captures the displayed region; gamescope captures native pixels on supported niri layouts, falling back to desktop with a terminal warning."
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "default": 1,
+          "description": "Inference thread limit, not an OS CPU quota."
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1,
+          "examples": [1, 0.5],
+          "description": "Resize factor applied after capture; 1 keeps original size, 0.5 halves width and height."
+        },
+        "preprocess": {
+          "type": "string",
+          "enum": ["none", "grayscale"],
+          "default": "none",
+          "description": "Keep color or convert to grayscale after resizing."
+        }
+      }
+    }
+  }
+}

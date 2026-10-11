@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/znp0/xpeek/main/config.schema.json",
   "history_limit": 100,
   "provider": "google",
   "source_lang": "auto",

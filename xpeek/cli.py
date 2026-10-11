@@ -8,14 +8,17 @@ Commands:
     xpeek reset-size      -- restore default popup sizes, keeping placement
     xpeek history         -- print translation history in the terminal
     xpeek clear-history   -- wipe translation history
+    xpeek update          -- fetch and install a release, keeping OCR engines
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import subprocess
 import sys
 from dataclasses import replace
+from pathlib import Path
 
 from . import APPLICATION_ID, __version__
 from .capture import CaptureError, capture_screen, select_region
@@ -189,6 +192,34 @@ def cmd_clear_history(args: argparse.Namespace) -> int:
     history.clear()
     print("History cleared.")
     return 0
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    """Run the managed checkout's updater without loading user configuration."""
+    try:
+        environment = Path(sys.prefix)
+        marker = environment / ".xpeek-install.json"
+        if not marker.is_file():
+            raise RuntimeError("Updating requires a setup.py-managed installation; run python3 setup.py install first.")
+        state = json.loads(marker.read_text())
+        project = Path(state["project"])
+        if not project.is_absolute() or (project / ".venv").resolve() != environment.resolve():
+            raise RuntimeError("Installation does not match its checkout; rerun python3 setup.py install.")
+        installer = project / "setup.py"
+        python = Path(sys.base_prefix) / "bin" / "python3"
+        if not installer.is_file() or not python.is_file():
+            raise RuntimeError("Checkout or distro Python is missing; restore the checkout and rerun setup.")
+        command = [str(python), str(installer), "update"]
+        if args.tag is not None:
+            command.extend(["--tag", args.tag])
+        if args.ocr_engines is not None:
+            command.extend(["--ocr-engines", args.ocr_engines])
+        return subprocess.run(command, cwd=project, check=False).returncode
+    except KeyboardInterrupt:
+        return 130
+    except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -379,6 +410,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_clear = subparsers.add_parser("clear-history", help="Clear translation history")
     p_clear.set_defaults(func=cmd_clear_history)
+
+    p_update = subparsers.add_parser(
+        "update", help="Fetch and install the latest release, keeping installed OCR engines",
+        description=("Run the managed checkout's setup.py updater from any directory. "
+                     "Fetch the latest stable release and reinstall without an engine prompt. "
+                     "Close the popup first; a clean checkout is required. "
+                     "Config settings and state are preserved; only $schema is refreshed."),
+    )
+    p_update.add_argument("--tag", metavar="vX.Y.Z", help="Choose a specific release, including an older version")
+    p_update.add_argument(
+        "--ocr-engines", metavar="ENGINE[,ENGINE...]",
+        help="Override installed engine selection: all or comma-separated engine names",
+    )
+    p_update.set_defaults(func=cmd_update)
 
     return parser
 

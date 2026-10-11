@@ -7,8 +7,10 @@
 - Use `.venv/bin/python` for local checks. GTK bindings come from distro packages.
 - Use Ruff for Python linting; run `.venv/bin/python -m ruff check .` before committing Python changes.
 - `python3 setup.py install` creates or updates the managed environment and command symlink. Rerun it when changing the installed command or package version.
-- Preserve existing user configuration, saved region, window state, and history during install.
+- Preserve existing user settings, saved region, window state, and history during install. The sole config update is refreshing `$schema` to the GitHub schema URL for the installed version's release tag; keep all other fields and config permissions unchanged.
 - Do not add automatic configuration or state migrations unless explicitly requested.
+- `setup.py update` fetches the latest stable GitHub release, checks out its version tag, and runs that release's installer in a fresh process. Require a managed installation and clean checkout, preserve the selected OCR engines by default, and allow downgrades only with an explicit `--tag`.
+- `xpeek update` is a thin wrapper around the managed checkout's `setup.py update`, forwarding `--tag` and `--ocr-engines` from any working directory. Keep update logic in setup and avoid loading user config for updates.
 - Run checks relevant to the change and `git diff --check` before committing. GUI input changes need real pointer testing when possible; simulated coordinate tests alone can miss compositor behavior. Report live-testing limitations.
 - Keep task-specific test scripts and build artifacts out of the repository; use temporary files and remove them when finished.
 - Never read out or commit API keys, `.env`, or user configuration containing secrets. `.env.example` must contain placeholders only.

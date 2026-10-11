@@ -14,6 +14,9 @@ Run `xpeek --help` or `xpeek COMMAND --help` for available flags and examples. U
 | `history [-n N]` | Print saved OCR text and translations; default all |
 | `history --watch [-n N]` | Watch recent entries in a scrollable terminal view; default 10 |
 | `clear-history` | Remove saved translation history |
+| `update [--tag vX.Y.Z] [--ocr-engines ENGINES]` | Fetch and install a release, keeping installed engines by default |
+
+`xpeek update` runs the checkout's `setup.py update` from any directory. Close the popup first. A managed installation and clean git checkout are required; newer development versions are kept unless `--tag` explicitly selects an older release. Other config settings and state are preserved while `$schema` is refreshed. Use `--ocr-engines all` or comma-separated engine names to change the selection.
 
 ## Flags and clipboard
 

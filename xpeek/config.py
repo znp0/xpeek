@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .ocr import validate_settings
 
 try:
@@ -38,6 +39,7 @@ def _data_dir() -> Path:
 
 CONFIG_PATH = _config_dir() / "config.json"
 HISTORY_PATH = _data_dir() / "history.json"
+CONFIG_SCHEMA_URL = f"https://raw.githubusercontent.com/znp0/xpeek/v{__version__}/config.schema.json"
 
 
 class ConfigError(RuntimeError):
@@ -97,6 +99,12 @@ class Config:
             raise ConfigError(f"Config file at {path} is corrupted: {exc}") from exc
 
         try:
+            if not isinstance(raw, dict):
+                raise TypeError("configuration must be an object")
+            if "$schema" in raw and not isinstance(raw["$schema"], str):
+                raise ValueError("$schema must be a string")
+            # Editor metadata is not a runtime option and is never fetched.
+            raw.pop("$schema", None)
             config = cls(**raw)
             if type(config.persistent_window) is not bool:
                 raise ValueError("persistent_window must be true or false")

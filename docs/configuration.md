@@ -2,6 +2,8 @@
 
 Setup creates `$XDG_CONFIG_HOME/xpeek/config.json` (default `~/.config/xpeek/config.json`). Edit it using [config.example.json](../config.example.json). The example is not loaded automatically. If config is missing, rerun setup.
 
+Setup adds or refreshes `$schema` to reference the GitHub-hosted [config.schema.json](../config.schema.json) at the installed version's release tag, preserving all other settings. The development example references `main`. For offline editing, set `$schema` to the local schema's absolute path instead; the next install replaces it with the version-specific URL. The field is optional editor metadata; xpeek ignores it and does not fetch or validate against the schema at runtime.
+
 New configs use Google, `source_lang: "auto"`, `target_lang: "en"`, `persistent_window: false`, `history_limit: 100`, and empty `provider_options` / `ocr_options`. Omitted engine options use desktop capture. The initial `ocr_engine` is chosen among installed engines in this order: Paddle tiny, RapidOCR, Paddle small. Setup preserves existing config, including its engine choice.
 
 | Setting | Purpose |
