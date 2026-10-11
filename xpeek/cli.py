@@ -16,7 +16,7 @@ from dataclasses import replace
 
 from .capture import CaptureError, capture_region, select_region
 from .clipboard import ClipboardError, copy_text
-from .config import Config, ConfigError, Region
+from .config import HISTORY_PATH, Config, ConfigError, Region
 from .history import HistoryStore
 from .notifications import notify_clipboard_copied
 from .ocr import OcrError, extract_text
@@ -129,6 +129,9 @@ def cmd_show_history(args: argparse.Namespace) -> int:
 
 def cmd_history(args: argparse.Namespace) -> int:
     config = Config.load()
+    if args.watch:
+        from .history_watch import watch_history
+        return watch_history(HISTORY_PATH, args.limit or 10)
     history = HistoryStore(limit=config.history_limit)
     entries = history.all()
 
@@ -290,9 +293,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_show_history.set_defaults(func=cmd_show_history)
 
-    p_history = subparsers.add_parser("history", help="Print translation history in the terminal")
+    p_history = subparsers.add_parser(
+        "history", help="Print or watch translation history in the terminal",
+        description=(
+            "Print saved OCR text and translations, oldest first. With --watch, "
+            "open a scrollable live view of the latest 10 entries by default. "
+            "New entries follow the bottom unless you scroll up. "
+            "Scroll with arrows, Page Up/Down, Home/End, or the mouse wheel; Ctrl+C exits."
+        ),
+    )
     p_history.add_argument(
-        "-n", "--limit", type=int, default=None, help="Only show the last N entries"
+        "-n", "--limit", type=_positive_int, default=None, metavar="N",
+        help="Show the latest N entries; positive integer (default: all, or 10 with --watch)",
+    )
+    p_history.add_argument(
+        "-w", "--watch", action="store_true",
+        help="Watch for changes in a scrollable terminal view; Ctrl+C exits",
     )
     p_history.set_defaults(func=cmd_history)
 

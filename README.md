@@ -53,6 +53,7 @@ xpeek ocr -p gemini -s auto -t en  # Choose provider and languages for that regi
 xpeek show-history                # Show the latest 10 translations, starting at the bottom
 xpeek show-history -n 20          # Show the latest 20 saved translations
 xpeek history -n 10               # Print recent history in the terminal
+xpeek history --watch             # Watch the latest 10 entries in a scrollable terminal view
 xpeek clear-history
 xpeek --help
 xpeek translate --help
@@ -62,6 +63,8 @@ xpeek ocr --help
 Only one translation window is used. By default, a translation invocation closes an existing popup and exits; run it again to translate. `--persistent` enables append mode, keeping the latest 10 entries with scrolling and removing older entries from the display. Later translation calls inherit the open popup's mode, including calls with another provider. `--no-persistent` restores the default behavior and closes an existing popup. The close button, Escape when focused, or `show-history` also closes it. Display trimming does not remove saved history.
 
 `show-history` opens the latest 10 saved translations in chronological order and scrolls to the bottom. Use `-n N` / `--limit N` to choose a positive number of entries. This does not change persistent mode's 10-entry limit. Persistent mode follows new entries while you're at the bottom; scrolling up preserves your reading position.
+
+`history --watch` displays the latest 10 saved OCR texts and translations, refreshing as history changes; use `-n N` to choose another limit. Scroll with arrow keys, Page Up/Down, Home/End, or the mouse wheel. New entries follow the bottom unless you scroll up. Press Ctrl+C or `q` to exit. History records successful translations; clipboard-only calls are not recorded.
 
 `ocr` always leaves the saved region unchanged; without a provider (or with `-p clipboard`), it copies text and runs independently. `translate -p clipboard` uses the saved region and also runs independently. Clipboard mode ignores persistence flags. Successful copies send a desktop notification when `notify-send` is available; empty OCR leaves the clipboard unchanged.
 
