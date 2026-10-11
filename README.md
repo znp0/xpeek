@@ -85,7 +85,7 @@ Set `ocr_engine` to your default engine; `--ocr-engine` overrides it for one com
 | Option | Default | Usage |
 | --- | --- | --- |
 | `capture_backend` | `"desktop"` | `"desktop"` captures the displayed region; `"gamescope"` captures native game pixels on supported niri layouts, with desktop fallback. |
-| `threads` | `1` | Integer 1–4. More threads can reduce processing time but increase CPU use; our tests favored one thread. This is not an OS CPU quota. |
+| `threads` | `1` | Integer 1–4. More threads can reduce processing time but increase CPU use; benchmark results favored one thread. This is not an OS CPU quota. |
 | `scale` | `1` | Positive factor applied before OCR: `0.5` halves width and height, `1` keeps captured resolution. Downscaling uses area interpolation; enlarging uses cubic. |
 | `preprocess` | `"none"` | Keep color with `"none"`, or use `"grayscale"` after resizing. Grayscale can change word boundaries and meaning. |
 
@@ -103,15 +103,15 @@ Merge these settings into your config for Tiny at native gamescope resolution an
 
 Then use `xpeek translate --ocr-engine paddleocr-small` to switch capture and OCR settings together. Omitted engine settings use desktop capture, one thread, original resolution, and color. These example combinations follow the Wuthering Waves results; compare your own dialogue before adopting them.
 
-Tested on an Intel Core i7-12700H using 25 desktop captures of Wuthering Waves, rendered at 1280 × 800 and upscaled to 2560 × 1600. Warm OCR medians exclude startup, capture, and translation:
+Tested on an Intel Core i7-12700H using 25 Wuthering Waves captures with `capture_backend: "desktop"` (`grim`). The game rendered at 1280 × 800 and was upscaled to 2560 × 1600; the captured region was 2270 × 1060. Warm OCR medians exclude startup, capture, and translation:
 
-| Settings (one thread, color) | Time | Dialogue result |
-| --- | ---: | --- |
-| Tiny, `scale: 1` | 1.142 s | Preserved difficult clauses; our safe Tiny starting point |
-| Tiny, `scale: 0.5` | 0.425 s | Lost an entire cinematic sentence |
-| Small, `scale: 1` | 2.716 s | Preserved all annotated clauses and choices |
-| Small, `scale: 0.5` | 1.172 s | Preserved all annotated clauses and choices; character error fell from 0.59% to 0.33% |
+| Capture backend | Settings (one thread, color) | Time | Dialogue result |
+| --- | --- | ---: | --- |
+| `desktop` | Tiny, `scale: 1` | 1.142 s | Preserved difficult clauses; safer Tiny starting point |
+| `desktop` | Tiny, `scale: 0.5` | 0.425 s | Lost an entire cinematic sentence |
+| `desktop` | Small, `scale: 1` | 2.716 s | Preserved all annotated clauses and choices |
+| `desktop` | Small, `scale: 0.5` | 1.172 s | Preserved all annotated clauses and choices; character error fell from 0.59% to 0.33% |
 
-Small at `0.5` gave the best tested accuracy/speed balance without manual cropping on those upscaled images. Keep Tiny at `1`; grayscale sometimes changed a direction or subject, so color remains the default. Testing covered only Wuthering Waves on one machine; other games are untested. Compare your own dialogue before adopting reduced resolution. See the [OCR guide](docs/ocr.md) and [full benchmark results](docs/benchmarks.md), including native-resolution comparisons.
+Small at `0.5` gave the best tested accuracy/speed balance without manual cropping on those desktop images. Separate native gamescope experiments favored Tiny at `1` for speed and dialogue retention, using different scenes from the desktop set. Grayscale sometimes changed a direction or subject, so color remains the default. Testing covered only Wuthering Waves on one machine; other games are untested. Compare your own dialogue before adopting reduced resolution. See the [OCR guide](docs/ocr.md) and [full benchmark results](docs/benchmarks.md).
 
 Capture defaults to `grim`, including gamescope upscaling. Set `capture_backend: "gamescope"` inside an engine's `ocr_options` or use `--capture-backend gamescope` for native-resolution capture on supported niri layouts. The saved or temporary region is mapped into the native game frame; unavailable capture falls back to desktop with a terminal warning. Start with OCR `scale: 1`, since scaling applies after capture. See the [capture guide](docs/capture.md) for setup and limitations.
