@@ -1,105 +1,114 @@
 # xpeek
 
-Copy and translate screen text on Linux/Wayland. Select a region, extract text with RapidOCR, and display a translation or copy the original text to your clipboard. Defaults to automatic source-language detection → English using Google Translate.
+Copy and translate screen text on Linux/Wayland. Mainly developed for gaming dialogue and subtitles; other use cases have not been thoroughly tested. Select a region, then translate its text in a popup or copy it to your clipboard.
 
 ![xpeek translating game dialogue into Vietnamese in a persistent popup](docs/images/xpeek-in-action.png)
 
 ## Install
 
-Requires Python 3.10+, GTK4, PyGObject, `grim`, `slurp`, and `wl-copy`. Install `gtk4-layer-shell` for an independently positioned popup. OCR uses bundled RapidOCR/ONNX models; Tesseract and language packs are not required.
-
-On Arch:
+Requires distro Python 3.10+, GTK4/PyGObject, `grim`, `slurp`, and `wl-copy`. Install `gtk4-layer-shell` for independent popup placement on niri and other layer-shell desktops.
 
 ```bash
+# Arch / CachyOS
 sudo pacman -S python python-pip python-gobject gtk4 gtk4-layer-shell grim slurp wl-clipboard
-# Optional desktop notifications (also needs a notification daemon):
-sudo pacman -S libnotify
-
 git clone https://github.com/znp0/xpeek.git
 cd xpeek
 python3 setup.py install
 ```
 
-The installer creates `.venv` with access to distro GTK bindings, installs Python/provider dependencies, links `~/.local/bin/xpeek`, and creates `~/.config/xpeek/config.json` if missing. Use your distro's Python; setup needs no `sudo`. Keep the checkout in place and rerun `python3 setup.py install` after updates. If `xpeek` is not found, add `~/.local/bin` to your PATH:
+Setup asks which OCR engines to install: RapidOCR, PaddleOCR tiny, or PaddleOCR small. A new config defaults to tiny if selected, otherwise RapidOCR, then small. Paddle uses a separate managed Python 3.12 runtime on glibc Linux, x86_64. To skip the prompt:
+
+```bash
+python3 setup.py install --ocr-engines rapidocr,paddleocr-tiny
+python3 setup.py install --ocr-engines all # Install all three engines
+```
+
+Press Enter to accept the displayed engine selection (tiny on a fresh install; previous engines on updates). Non-interactive installs require `--ocr-engines`; missing or empty selections fail.
+
+The installer creates `.venv`, downloads selected models/dependencies, links `~/.local/bin/xpeek`, and creates `~/.config/xpeek/config.json` if missing. Use distro Python; setup needs no `sudo`. Keep the checkout in place and rerun setup after updates. Existing config, saved region, popup geometry, and history are preserved. If needed, add `~/.local/bin` to your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-To uninstall, run this from the same checkout:
+Remove selected engines or uninstall from the same checkout:
 
 ```bash
-python3 setup.py uninstall                 # Keep config (default)
-python3 setup.py uninstall --keep-config   # Explicitly keep config
-python3 setup.py uninstall --remove-config # Also delete config, saved region, and popup state
+python3 setup.py remove-engines paddleocr-small # Keep xpeek and the remaining engines
+python3 setup.py uninstall                 # Keep configuration and state
+python3 setup.py uninstall --remove-config # Also remove config, region, and popup state
 ```
 
-Uninstall removes the managed environment and command symlink, plus any empty directories created by install. Configuration, saved region, and popup state are kept unless `--remove-config` is specified. History and unrelated files are preserved. System packages are managed separately.
+Removing engines keeps config unchanged and requires at least one engine to remain; update `ocr_engine` if you remove its engine. Uninstall removes the managed environments, model downloads/caches, and command symlink. History and unrelated files are preserved; distro packages are managed separately. Clipboard notifications are optional and require `notify-send` plus a desktop notification daemon.
 
-## Usage
+## Use
 
 ```bash
-xpeek select                      # Select and save a translation region
-xpeek translate                   # Translate the saved region in an overlay
-xpeek translate --persistent      # Append translations to a persistent popup
-xpeek translate --no-persistent   # Close an existing popup; otherwise use normal mode
-xpeek translate -p gemini         # Override the provider for this invocation
-xpeek translate -s en -t ja       # Translate English text to Japanese
-xpeek translate -s auto -t en     # Detect the source language and translate
-xpeek translate -p=clipboard      # Copy OCR text from the saved region
-xpeek ocr                         # Select a temporary region and copy its text
-xpeek ocr -p google               # Translate a temporary region in an overlay
-xpeek ocr -p gemini -s auto -t en  # Choose provider and languages for that region
-xpeek show-history                # Show the latest 10 translations, starting at the bottom
-xpeek show-history -n 20          # Show the latest 20 saved translations
-xpeek history -n 10               # Print recent history in the terminal
-xpeek history --watch             # Watch the latest 10 entries in a scrollable terminal view
-xpeek clear-history
-xpeek --help
-xpeek translate --help
-xpeek ocr --help
+xpeek select                         # Save a screen region
+xpeek --version                      # Show the installed version
+xpeek translate                      # Translate the saved region
+xpeek translate --persistent         # Append to one popup, keeping the latest 10
+xpeek translate --ocr-engine paddleocr-small
+xpeek translate -p gemini -s auto -t vi
+xpeek translate -p clipboard          # Copy text from the saved region
+xpeek ocr                            # Select a temporary region and copy text
+xpeek ocr -p google                   # Translate a temporary region
+xpeek show-history -n 10              # Open recent translations
+xpeek history --watch                 # Watch history in a scrollable terminal view
 ```
 
-Only one translation window is used. By default, a translation invocation closes an existing popup and exits; run it again to translate. `--persistent` enables append mode, keeping the latest 10 entries with scrolling and removing older entries from the display. Later translation calls inherit the open popup's mode, including calls with another provider. `--no-persistent` restores the default behavior and closes an existing popup. The close button, Escape when focused, or `show-history` also closes it. Display trimming does not remove saved history.
+Normal translation calls toggle the single popup. Persistent mode appends results and follows new entries while you're at the bottom. Clipboard calls run independently; `ocr` never changes the saved region. Flags override config only for that invocation. See `xpeek --help`, command-specific help, and the [usage guide](docs/usage.md).
 
-`show-history` opens the latest 10 saved translations in chronological order and scrolls to the bottom. Use `-n N` / `--limit N` to choose a positive number of entries. This does not change persistent mode's 10-entry limit. Persistent mode follows new entries while you're at the bottom; scrolling up preserves your reading position.
+## Configure
 
-`history --watch` displays the latest 10 saved OCR texts and translations, refreshing as history changes; use `-n N` to choose another limit. Scroll with arrow keys, Page Up/Down, Home/End, or the mouse wheel. New entries follow the bottom unless you scroll up. Press Ctrl+C or `q` to exit. History records successful translations; clipboard-only calls are not recorded.
+Edit `~/.config/xpeek/config.json`; see [config.example.json](config.example.json) and the [configuration guide](docs/configuration.md). Translation starts with automatic source detection → English, using Google without an API key. Other providers are DeepL, OpenAI, Gemini, and Ollama.
 
-`ocr` always leaves the saved region unchanged; without a provider (or with `-p clipboard`), it copies text and runs independently. `translate -p clipboard` uses the saved region and also runs independently. Clipboard mode ignores persistence flags. Successful copies send a desktop notification when `notify-send` is available; empty OCR leaves the clipboard unchanged.
-
-Selection dims the live screen while keeping the selected area clear. Drag to select, release to finish, or press Escape to cancel.
-
-On niri and other layer-shell desktops, the popup needs no window rules. Drag its header to move it between monitors; it stays where released and can span adjacent screens. Dragging, resizing, scrolling, and closing work from either screen. Resize from an edge or corner, and close with the button or Escape when focused. Persistent mode starts 700 logical pixels tall, versus 400 in normal mode; their heights are remembered separately. It remembers its output, position, and size in `~/.local/state/xpeek/window-state.json` (respects `XDG_STATE_HOME`). Delete this file to reset placement. Without layer-shell, a normal GTK window restores its size while the desktop controls its position.
-
-If the popup's monitor disconnects, it temporarily moves to the nearest remaining monitor. Its gap from the facing edge is scaled to that monitor's size: a popup near the left edge of a monitor on the right lands near the remaining monitor's right edge. The original monitor and position remain saved across closing and reopening; reconnecting that monitor restores them. Only dragging the header saves a new monitor and position. Resizing updates the remembered size.
-
-## Configuration
-
-Config: `~/.config/xpeek/config.json` (respects `XDG_CONFIG_HOME`). Setup creates it; edit it using [config.example.json](config.example.json) as a reference. Set `provider`, `source_lang`, `target_lang`, `persistent_window`, `history_limit`, and per-provider models/hosts in `provider_options`. Set `persistent_window` to `true` to open popups in append mode by default (initially `false`).
-
-`xpeek select` saves the region in `~/.local/state/xpeek/region.json`, alongside `window-state.json` (respects `XDG_STATE_HOME`). Selecting a region does not change config. History stays in `~/.local/share/xpeek/history.json` (respects `XDG_DATA_HOME`).
-
-The installed config starts with `source_lang: "auto"`, `target_lang: "en"`, and empty `provider_options`. xpeek reads this file; if it is missing, rerun `python3 setup.py install`. Setup leaves existing configuration and state files unchanged. The example illustrates optional provider settings and is not loaded automatically.
-
-Providers: `google` (no key), `deepl`, `openai`, `gemini`, and `ollama` (local server). `-p` / `--provider` overrides the saved provider without saving it; `clipboard` skips translation.
-
-Both `translate` and `ocr` accept `-p` / `--provider`, `-s` / `--source-lang`, `-t` / `--target-lang`, and `--persistent` / `--no-persistent`. Flags do not change configuration. `translate` defaults to the configured provider; `ocr` defaults to `clipboard`. Omitted language flags use the configured languages (`auto` → `en` initially). Use `--source-lang auto` (or `detect`) to request automatic source detection. Supported languages and codes depend on the provider. These flags do not change the OCR model; recognition depends on its supported characters. Clipboard mode copies the original text and ignores translation language flags.
-
-### API keys
-
-Keep keys out of `config.json`. From the checkout, create a local `.env`:
+Keep API keys in environment variables or the checkout's ignored `.env`:
 
 ```bash
 cp -n .env.example .env
-# Edit .env and fill in only DEEPL_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY.
+# Fill in DEEPL_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY as needed.
 ```
 
-xpeek loads the checkout's `.env` automatically, including when launched from another directory. `.env` is ignored by Git; `.env.example` contains no keys. You can also export a key instead:
+Exported variables take precedence. Use `provider_options` for non-secret settings such as models and hosts.
 
-```bash
-export GEMINI_API_KEY="your-key"
-xpeek translate -p gemini
+| OCR engine | Choose it for |
+| --- | --- |
+| `paddleocr-tiny` | Best tested balance of speed and dialogue retention |
+| `rapidocr` | The existing lightweight ONNX engine |
+| `paddleocr-small` | Cleaner text, with slower processing |
+
+Set `ocr_engine` to your default engine; `--ocr-engine` overrides it for one command. Configure each engine separately in `ocr_options`:
+
+| Option | Default | Usage |
+| --- | --- | --- |
+| `threads` | `1` | Integer 1–4. More threads can reduce processing time but increase CPU use; our tests favored one thread. This is not an OS CPU quota. |
+| `scale` | `1` | Positive factor applied before OCR: `0.5` halves width and height, `1` keeps captured resolution. Downscaling uses area interpolation; enlarging uses cubic. |
+| `preprocess` | `"none"` | Keep color with `"none"`, or use `"grayscale"` after resizing. Grayscale can change word boundaries and meaning. |
+
+Merge these settings into your config for Tiny at original resolution and Small at half resolution:
+
+```json
+{
+  "ocr_engine": "paddleocr-tiny",
+  "ocr_options": {
+    "paddleocr-tiny": {"threads": 1, "scale": 1, "preprocess": "none"},
+    "paddleocr-small": {"threads": 1, "scale": 0.5, "preprocess": "none"}
+  }
+}
 ```
 
-Exported variables take precedence over `.env`. Keep `provider_options` empty or use it only for non-secret settings such as models and hosts.
+Then use `xpeek translate --ocr-engine paddleocr-small` to try the Small settings. Omitted engine settings use the defaults; RapidOCR also starts with one thread, original resolution, and color.
+
+Tested on an Intel Core i7-12700H using 25 desktop captures of Wuthering Waves, rendered at 1280 × 800 and upscaled to 2560 × 1600. Warm OCR medians exclude startup, capture, and translation:
+
+| Settings (one thread, color) | Time | Dialogue result |
+| --- | ---: | --- |
+| Tiny, `scale: 1` | 1.142 s | Preserved difficult clauses; our safe Tiny starting point |
+| Tiny, `scale: 0.5` | 0.425 s | Lost an entire cinematic sentence |
+| Small, `scale: 1` | 2.716 s | Preserved all annotated clauses and choices |
+| Small, `scale: 0.5` | 1.172 s | Preserved all annotated clauses and choices; character error fell from 0.59% to 0.33% |
+
+Small at `0.5` gave the best tested accuracy/speed balance without manual cropping on those upscaled images. Keep Tiny at `1`; grayscale sometimes changed a direction or subject, so color remains the default. Testing covered only Wuthering Waves on one machine; other games are untested. Compare your own dialogue before adopting reduced resolution. See the [OCR guide](docs/ocr.md) and [full benchmark results](docs/benchmarks.md), including native-resolution comparisons.
+
+Capture currently uses `grim` on the selected desktop region, including any gamescope upscaling. There is no gamescope screenshot option in `0.12.0`; `scale: 0.5` resizes an already-captured image. Native gamescope capture is planned separately, with saved-region coordinate mapping and a desktop fallback.

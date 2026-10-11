@@ -12,6 +12,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .ocr import validate_settings
+
 try:
     from dotenv import load_dotenv
     # Support source checkouts and installations into the checkout's .venv.
@@ -73,6 +75,8 @@ class Config:
     source_lang: str = "auto"
     target_lang: str = "en"
     persistent_window: bool = False
+    ocr_engine: str = "rapidocr"
+    ocr_options: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Per-provider settings such as models and hosts; keys can come from .env.
     provider_options: dict[str, Any] = field(default_factory=dict)
 
@@ -91,6 +95,7 @@ class Config:
             config = cls(**raw)
             if type(config.persistent_window) is not bool:
                 raise ValueError("persistent_window must be true or false")
+            validate_settings(config.ocr_engine, config.ocr_options)
             return config
         except (TypeError, ValueError) as exc:
             raise ConfigError(f"Invalid config file at {path}: {exc}") from exc

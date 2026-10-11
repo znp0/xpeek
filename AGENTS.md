@@ -1,6 +1,6 @@
 # Working on xpeek
 
-`xpeek` is a small Python CLI for copying and translating screen text on Linux/Wayland. It uses RapidOCR, GTK4/PyGObject, and gtk4-layer-shell. The command is `xpeek`; keep the README concise and omit a folder-structure listing.
+`xpeek` is a small Python CLI for copying and translating screen text on Linux/Wayland, primarily developed for gaming; other use cases have not been thoroughly tested. It uses RapidOCR or PaddleOCR tiny/small, GTK4/PyGObject, and gtk4-layer-shell. The command is `xpeek`; keep the README concise and omit a folder-structure listing.
 
 ## Development
 
@@ -23,11 +23,16 @@
 - While the project is below `1.0.0`, breaking changes also increment the minor version. From `1.0.0` onward, breaking changes increment the major version.
 - Bump once per completed change batch, using its highest-impact change; do not bump again for follow-up commits within that same batch.
 - Documentation, agent instructions, tests, and internal refactoring without user-visible changes do not require a bump. Honor an explicitly requested version.
+- Release `1.0.0` when commands, flags, configuration, and documented behavior are stable; core workflows and installation are reliable on supported systems; and the project is ready to preserve compatibility throughout `1.x`.
+- Treat `1.0.0` as a compatibility commitment. It does not require every planned feature, perfect OCR, or a large user base.
+- Choose the milestone based on readiness, not the number of `0.x` releases. A direct jump from any `0.x` version is valid.
 
 ## Behavior to preserve
 
 - `select` saves a region in `$XDG_STATE_HOME/xpeek/region.json` (default `~/.local/state/xpeek/region.json`); `translate` uses it. Keep selected regions and popup geometry out of config. `ocr` selects a temporary region without changing the saved one and defaults to copying text to the clipboard.
 - Provider and language flags override configuration only for that invocation.
+- Supported OCR engines are `rapidocr`, `paddleocr-tiny`, and `paddleocr-small`. Setup lets users choose engines; new config defaults follow tiny → RapidOCR → small among those installed. Preserve existing config on updates. `--ocr-engine` overrides it only for the current `translate` or `ocr` invocation, including clipboard mode. Forward each request's engine/options to the popup. Load readers lazily and reuse them while the process lives; own and stop the isolated Paddle worker on process exit. Recognition languages depend on the model, independently of translation language flags.
+- OCR defaults to one inference thread, original scale, and color. Per-engine options accept `threads` from 1–4, a finite positive `scale`, and `preprocess` of `none` or `grayscale`. Keep managed Paddle Python, models, and caches inside the installation so uninstall removes them. Do not add a background OCR service or gamescope capture without an explicit request.
 - Translation invocations toggle the single popup in normal mode. Persistent mode appends the latest 10 entries with scrolling; later calls inherit the open popup's mode unless explicitly overridden. Clipboard-only invocations run independently.
 - `show-history` displays the latest 10 saved translations by default, accepts a positive `-n` / `--limit` override, and starts at the bottom in chronological order. Its limit does not change persistent mode's 10-entry limit. Persistent appending follows new entries only when already at the bottom; scrolling up preserves the reading position.
 - Persistent and normal popup heights are remembered separately. Provider, language, and persistence flags must not write configuration, and appending must preserve saved placement and capture each request before queued translation work.

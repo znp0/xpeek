@@ -4,15 +4,30 @@
   "source_lang": "auto",
   "target_lang": "en",
   "persistent_window": false,
+  "ocr_engine": "paddleocr-tiny",
+  "ocr_options": {
+    "paddleocr-tiny": {
+      "threads": 1,
+      "scale": 1,
+      "preprocess": "none"
+    }
+  },
   "provider_options": {
+    "deepl": {
+      "api_key": ""
+    },
     "openai": {
-      "model": "gpt-4o-mini"
+      "api_key": "",
+      "model": "gpt-4o-mini",
+      "base_url": null
     },
     "ollama": {
       "host": "http://localhost:11434",
-      "model": "llama3.1"
+      "model": "llama3.1",
+      "num_gpu": null
     },
     "gemini": {
+      "api_key": "",
       "model": "gemini-3.1-flash-lite"
     }
   }

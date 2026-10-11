@@ -40,7 +40,7 @@ except (ImportError, ValueError):
 from .capture import CaptureError, capture_region, select_region
 from .config import Config, Region
 from .history import HistoryStore
-from .ocr import OcrError, extract_text
+from .ocr import OcrError, extract_text, shutdown_backends
 from .providers import TranslationError, get_translator
 from .region_state import load_region
 from .window_state import MIN_HEIGHT, MIN_WIDTH, WindowState
@@ -74,7 +74,7 @@ def translation_result(
         except CaptureError as exc:
             return f"Capture error: {exc}", "", ""
         try:
-            original = extract_text(image)
+            original = extract_text(image, config.ocr_engine, config.ocr_options.get(config.ocr_engine, {}))
         except OcrError as exc:
             return f"OCR error: {exc}", "", ""
         finally:
@@ -910,3 +910,4 @@ def run_gui_translation(
         executor = getattr(app, "translation_executor", None)
         if executor is not None:
             executor.shutdown(wait=True)
+        shutdown_backends()

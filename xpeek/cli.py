@@ -14,12 +14,13 @@ import argparse
 import sys
 from dataclasses import replace
 
+from . import __version__
 from .capture import CaptureError, capture_region, select_region
 from .clipboard import ClipboardError, copy_text
 from .config import HISTORY_PATH, Config, ConfigError, Region
 from .history import HistoryStore
 from .notifications import notify_clipboard_copied
-from .ocr import OcrError, extract_text
+from .ocr import ENGINES, OcrError, extract_text
 from .providers import PROVIDERS
 from .region_state import REGION_PATH, load_region, save_region
 
@@ -52,7 +53,7 @@ def cmd_select(args: argparse.Namespace) -> int:
 
 
 def cmd_translate(args: argparse.Namespace) -> int:
-    config = Config.load()
+    config = _ocr_config(args)
     region = load_region()
     if (args.provider or config.provider) == "clipboard":
         if region is None:
@@ -86,7 +87,7 @@ def _translate_region(
 
 
 def cmd_ocr(args: argparse.Namespace) -> int:
-    config = Config.load()
+    config = _ocr_config(args)
     if args.provider != "clipboard":
         return _translate_region(config, None, args, temporary=True)
     try:
@@ -97,11 +98,16 @@ def cmd_ocr(args: argparse.Namespace) -> int:
     return _ocr_to_clipboard(config, region)
 
 
+def _ocr_config(args: argparse.Namespace) -> Config:
+    config = Config.load()
+    return replace(config, ocr_engine=args.ocr_engine) if args.ocr_engine is not None else config
+
+
 def _ocr_to_clipboard(config: Config, region: Region) -> int:
     try:
         image_path = capture_region(region)
         try:
-            text = extract_text(image_path)
+            text = extract_text(image_path, config.ocr_engine, config.ocr_options.get(config.ocr_engine, {}))
         finally:
             image_path.unlink(missing_ok=True)
         if not text.strip():
@@ -169,6 +175,10 @@ def build_parser() -> argparse.ArgumentParser:
             help=provider_help,
         )
         command_parser.add_argument(
+            "--ocr-engine", choices=ENGINES, default=None,
+            help="Override the configured OCR engine without saving; install engines with setup.py",
+        )
+        command_parser.add_argument(
             "-s", "--source-lang", metavar="CODE", type=_source_language, default=None,
             help=(
                 "Source language, e.g. en, or auto/detect for automatic detection; "
@@ -195,6 +205,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  -p, --provider {" + ",".join(provider_choices) + "}\n"
             "                        Provider (translate: config; ocr: clipboard);\n"
             "                        clipboard copies OCR text without translation.\n"
+            "  --ocr-engine {" + ",".join(ENGINES) + "}\n"
+            "                        OCR engine (configured default, chosen during install).\n"
             "  -s, --source-lang CODE Source language; auto/detect requests detection.\n"
             "  -t, --target-lang CODE Target language for translation (configured default).\n\n"
             "  --persistent          Keep the popup open and append translations (latest 10).\n"
@@ -206,10 +218,16 @@ def build_parser() -> argparse.ArgumentParser:
             "  xpeek translate --source-lang en --target-lang ja\n"
             "  xpeek translate -s auto -t vi\n"
             "  xpeek translate --provider=clipboard\n"
+            "  xpeek translate --ocr-engine paddleocr-tiny\n"
             "  xpeek ocr\n"
+            "  xpeek ocr --ocr-engine paddleocr-small\n"
             "  xpeek ocr -p gemini -s auto -t en\n\n"
             "Use translate --help or ocr --help for window behavior and examples."
         ),
+    )
+    parser.add_argument(
+        "-V", "--version", action="version", version=f"%(prog)s {__version__}",
+        help=f"Show version ({__version__}) and exit",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -228,7 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Further calls reuse its mode; --no-persistent closes an existing popup.\n"
             "Clipboard mode copies the OCR text and runs independently.\n\n"
             "Language codes depend on the provider. Language flags affect translation\n"
-            "only; they do not change the bundled OCR recognition model."
+            "only; recognition languages depend on the installed OCR model."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -240,7 +258,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  xpeek translate -p gemini\n"
             "  xpeek translate -s en -t ja\n"
             "  xpeek translate -s auto -t vi\n"
-            "  xpeek translate --provider=clipboard\n\n"
+            "  xpeek translate --provider=clipboard\n"
+            "  xpeek translate --ocr-engine paddleocr-tiny\n\n"
             "Use xpeek ocr -p PROVIDER to translate a temporary region."
         ),
     )
@@ -272,7 +291,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  xpeek ocr                       # temporary region -> clipboard\n"
             "  xpeek ocr -p google             # temporary region -> translation\n"
             "  xpeek ocr -p google --persistent # append a temporary-region translation\n"
-            "  xpeek ocr -p gemini -s auto -t en\n\n"
+            "  xpeek ocr -p gemini -s auto -t en\n"
+            "  xpeek ocr --ocr-engine paddleocr-small\n\n"
             "Use translate -p=clipboard to copy text from the saved region."
         ),
     )
@@ -326,6 +346,9 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
+    finally:
+        from .ocr import shutdown_backends
+        shutdown_backends()
 
 
 if __name__ == "__main__":

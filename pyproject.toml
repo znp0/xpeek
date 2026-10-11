@@ -1,18 +1,18 @@
 [project]
 name = "xpeek"
-version = "0.11.0"
+version = "0.12.0"
 description = "Copy and translate screen text on Wayland"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "rapidocr-onnxruntime>=1.2.0",
     "pillow>=10.0.0",
     "requests>=2.31.0",
-    "PyGObject>=3.42.0",
     "python-dotenv>=1.0.0",
+    "threadpoolctl>=3.6.0",
 ]
 
 [project.optional-dependencies]
+rapidocr = ["rapidocr-onnxruntime==1.2.3"]
 openai = ["openai>=1.0.0"]
 deepl = ["deep-translator>=1.11.0"]
 all = ["openai>=1.0.0", "deep-translator>=1.11.0"]
@@ -26,7 +26,7 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["xpeek", "xpeek.providers"]
+packages = ["xpeek", "xpeek.providers", "xpeek.ocr"]
 
 [tool.ruff]
 target-version = "py310"
