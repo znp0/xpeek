@@ -22,6 +22,8 @@
 - Increment the minor version for a feature and reset the patch to zero (`0.6.2` -> `0.7.0`). Increment the patch for a bug fix (`0.6.0` -> `0.6.1`).
 - While the project is below `1.0.0`, breaking changes also increment the minor version. From `1.0.0` onward, breaking changes increment the major version.
 - Bump once per completed change batch, using its highest-impact change; do not bump again for follow-up commits within that same batch.
+- After committing and verifying a completed version bump, create an annotated release tag named `vX.Y.Z` at the tested release commit (for example, `git tag -a v0.13.0 -m 'v0.13.0'`). Tag once per completed release batch, after its follow-up changes are committed; never move or replace a published tag.
+- When publishing a release, push its tag and use only `vX.Y.Z` as the GitHub release title. Include concise feature notes, installation guidance, and relevant testing limitations.
 - Documentation, agent instructions, tests, and internal refactoring without user-visible changes do not require a bump. Honor an explicitly requested version.
 - Release `1.0.0` when commands, flags, configuration, and documented behavior are stable; core workflows and installation are reliable on supported systems; and the project is ready to preserve compatibility throughout `1.x`.
 - Treat `1.0.0` as a compatibility commitment. It does not require every planned feature, perfect OCR, or a large user base.
