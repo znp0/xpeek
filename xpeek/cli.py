@@ -310,6 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
             "By default, an existing popup closes and the invocation exits.\n"
             "With --persistent, append results to a taller popup keeping the latest 10.\n"
             "Further calls reuse its mode; --no-persistent closes an existing popup.\n"
+            "After closing, models stay loaded for ocr_keepalive_seconds (default: 60).\n"
             "Clipboard mode copies the OCR text and runs independently.\n\n"
             "Language codes depend on the provider. Language flags affect translation\n"
             "only; recognition languages depend on the installed OCR model."
@@ -349,6 +350,7 @@ def build_parser() -> argparse.ArgumentParser:
             "without selecting a region, unless the popup is persistent.\n"
             "--persistent appends to a taller popup keeping the latest 10 translations.\n"
             "Further calls reuse its mode; --no-persistent restores close behavior.\n"
+            "After closing, models stay loaded for ocr_keepalive_seconds (default: 60).\n"
             "Clipboard mode runs independently and ignores persistence flags.\n\n"
             "Language flags affect translation only, not OCR recognition."
         ),
@@ -415,7 +417,7 @@ def build_parser() -> argparse.ArgumentParser:
         "update", help="Fetch and install the latest release, keeping installed OCR engines",
         description=("Run the managed checkout's setup.py updater from any directory. "
                      "Fetch the latest stable release and reinstall without an engine prompt. "
-                     "Close the popup first; a clean checkout is required. "
+                     "Stops the popup and OCR models automatically; a clean checkout is required. "
                      "Config settings and state are preserved; only $schema is refreshed."),
     )
     p_update.add_argument("--tag", metavar="vX.Y.Z", help="Choose a specific release, including an older version")

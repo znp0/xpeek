@@ -27,7 +27,7 @@ At least one engine must remain; use `uninstall` to remove everything. This remo
 
 Paddle uses managed CPython 3.12.15 with PaddleOCR 3.7.0, PaddlePaddle 3.3.1, and PaddleX 3.7.2. It runs independently of distro GTK bindings through an application-owned subprocess. Managed Paddle supports glibc Linux on x86_64; other platforms can select RapidOCR subject to its wheel availability. Downloads, models, and caches stay inside `.venv` and are removed by uninstall.
 
-Readers load on first use and stay loaded while the current application process lives. A persistent popup benefits from warm models; clipboard commands and closing/reopening a normal popup start new processes. There is no background OCR service or warmup command yet. Benchmark warm timings exclude model startup, capture, and translation.
+Readers load on first use and stay loaded while a popup is open. After closing either popup mode, the process retains loaded readers for `ocr_keepalive_seconds` (default: 60), allowing the next translation to reuse them. Reopening cancels the countdown; closing again starts a fresh countdown once active capture/translation work finishes. Expiry exits the popup process and stops its Paddle worker, releasing model memory. Set `0` to disable retention. Clipboard-only calls still use independent processes and release their models on exit. There is no separately installed background service or warmup command. Benchmark warm timings exclude model startup, capture, and translation.
 
 ## Options
 

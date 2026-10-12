@@ -41,6 +41,13 @@
       "default": false,
       "description": "Start new popups in append mode, retaining the latest 10 translations with scrolling."
     },
+    "ocr_keepalive_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967,
+      "default": 60,
+      "description": "Keep the popup process and loaded OCR models alive for this many idle seconds after closing. Reopening cancels the countdown; the next close restarts it. Visible popups and active work prevent expiry. Zero exits as soon as the popup closes and active work finishes. Clipboard-only calls remain independent."
+    },
     "ocr_engine": {
       "type": "string",
       "enum": ["rapidocr", "paddleocr-tiny", "paddleocr-small"],

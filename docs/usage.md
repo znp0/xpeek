@@ -16,7 +16,7 @@ Run `xpeek --help` or `xpeek COMMAND --help` for available flags and examples. U
 | `clear-history` | Remove saved translation history |
 | `update [--tag vX.Y.Z] [--ocr-engines ENGINES]` | Fetch and install a release, keeping installed engines by default |
 
-`xpeek update` runs the checkout's `setup.py update` from any directory. Close the popup first. A managed installation and clean git checkout are required; newer development versions are kept unless `--tag` explicitly selects an older release. Other config settings and state are preserved while `$schema` is refreshed. Use `--ocr-engines all` or comma-separated engine names to change the selection.
+`xpeek update` runs the checkout's `setup.py update` from any directory. After fetching and verifying the release, setup closes the popup and stops its process and OCR workers before replacing the installation. Model retention does not delay updating; blocked work is forcibly stopped after a short cleanup period, so an in-flight translation may be interrupted. Failed release verification and no-op updates leave the popup running. A managed installation and clean git checkout are required; newer development versions are kept unless `--tag` explicitly selects an older release. Other config settings and state are preserved while `$schema` is refreshed. Use `--ocr-engines all` or comma-separated engine names to change the selection. Before uninstalling manually, close the popup and wait for its idle process to exit.
 
 ## Flags and clipboard
 
@@ -29,6 +29,8 @@ Source `auto` or `detect` requests translation-language detection; language code
 Only one translation popup is used. In normal mode, a translation invocation closes an existing popup and exits; call it again to translate. `--persistent` enables appending, retaining the latest 10 entries with scrolling. Later calls inherit the open popup's mode, including calls with another provider or OCR engine. `--no-persistent` restores normal behavior and closes an existing popup.
 
 Persistent appending follows new entries only while already at the bottom. Scrolling up preserves the reading position. Trimming old display entries never removes saved history. Persistent and normal heights are remembered separately; their initial heights are 700 and 400 logical pixels.
+
+Closing a popup keeps its process and loaded OCR models alive for 60 idle seconds by default. Reopening reuses those models and cancels the countdown; closing again resets it. Both popup modes retain models while open, and active work finishes before the countdown starts. Configure `ocr_keepalive_seconds` to change the duration or set `0` to exit immediately after closing and finishing work. The initial terminal invocation remains running during retention; later commands return through the existing process. Clipboard-only commands do not use or extend this cache.
 
 `xpeek reset-size` restores the width to 500 and both heights to their defaults, in logical pixels. An open popup resizes immediately without changing its position, content, or mode. With no popup open, the command only updates saved sizes for the next opening.
 

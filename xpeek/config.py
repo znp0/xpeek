@@ -40,6 +40,8 @@ def _data_dir() -> Path:
 CONFIG_PATH = _config_dir() / "config.json"
 HISTORY_PATH = _data_dir() / "history.json"
 CONFIG_SCHEMA_URL = f"https://raw.githubusercontent.com/znp0/xpeek/v{__version__}/config.schema.json"
+# GApplication takes an unsigned 32-bit timeout in milliseconds.
+MAX_OCR_KEEPALIVE_SECONDS = (2**32 - 1) // 1000
 
 
 class ConfigError(RuntimeError):
@@ -77,6 +79,7 @@ class Config:
     source_lang: str = "auto"
     target_lang: str = "en"
     persistent_window: bool = False
+    ocr_keepalive_seconds: int = 60
     ocr_engine: str = "rapidocr"
     ocr_options: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Per-provider settings such as models and hosts; keys can come from .env.
@@ -108,6 +111,9 @@ class Config:
             config = cls(**raw)
             if type(config.persistent_window) is not bool:
                 raise ValueError("persistent_window must be true or false")
+            if (type(config.ocr_keepalive_seconds) is not int
+                    or not 0 <= config.ocr_keepalive_seconds <= MAX_OCR_KEEPALIVE_SECONDS):
+                raise ValueError(f"ocr_keepalive_seconds must be an integer between 0 and {MAX_OCR_KEEPALIVE_SECONDS}")
             validate_settings(config.ocr_engine, config.ocr_options)
             return config
         except (TypeError, ValueError) as exc:

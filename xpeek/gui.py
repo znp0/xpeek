@@ -715,6 +715,10 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.entries.append(entry)
         self.entries = self.entries[-DISPLAY_LIMIT:]
         self._render_entries()
+        self.app.ocr_started = True
+        # GTK windows and active jobs hold the application. GApplication starts
+        # this countdown only after their final release, and reopening cancels it.
+        self.app.set_inactivity_timeout(config.ocr_keepalive_seconds * 1000)
         self.app.hold()
         future = self.app.translation_executor.submit(translation_result, config, image, credentials)
         self.jobs[future] = image
@@ -845,6 +849,8 @@ def run_gui_translation(
     window = None
     local_exit_status = None
     app.capture_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="xpeek-capture")
+    app.ocr_started = False
+    app.stopping = False
 
     def print_error(command, message):
         printer = getattr(command, "printerr_literal", None)
@@ -891,6 +897,21 @@ def run_gui_translation(
         return GLib.SOURCE_REMOVE
 
     def startup(application):
+        def shutdown(_action, _parameter):
+            application.stopping = True
+            application.set_inactivity_timeout(0)
+            # Replace an existing idle countdown, while allowing outstanding
+            # job callbacks to clean up captures and release their holds.
+            application.hold()
+            try:
+                if window is not None:
+                    window.dismiss()
+            finally:
+                application.release()
+
+        action = Gio.SimpleAction.new("shutdown", None)
+        action.connect("activate", shutdown)
+        application.add_action(action)
         css = Gtk.CssProvider()
         css.load_from_data(b"""
             window.xpeek { background: #101010; color: #ffffff; border: 1px solid #363636; }
@@ -914,6 +935,8 @@ def run_gui_translation(
     def command_line(application, command):
         nonlocal window
         try:
+            if application.stopping:
+                raise RuntimeError("The popup is stopping for an update; retry after the update finishes.")
             if application.get_dbus_connection() is None:
                 raise RuntimeError("No accessible session D-Bus; cannot manage a single popup.")
             request = json.loads(command.get_arguments()[1])
@@ -921,6 +944,9 @@ def run_gui_translation(
                 success = window.reset_size() if window is not None and not window.closed else reset_saved_size()
                 return 0 if success else 1
             requested = request["persistent"]
+            current = Config(**request["config"])
+            if application.ocr_started:
+                application.set_inactivity_timeout(current.ocr_keepalive_seconds * 1000)
             if window is not None and window.closed:
                 window = None
             append = requested if requested is not None else (
@@ -929,7 +955,6 @@ def run_gui_translation(
             if window is not None and (request["mode"] == "last" or not append):
                 window.dismiss()
                 return 0
-            current = Config(**request["config"])
             if request["mode"] != "last":
                 selected = select_region() if request["temporary"] else (
                     Region(**request["region"]) if request["region"] else None)

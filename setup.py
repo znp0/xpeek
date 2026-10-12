@@ -18,6 +18,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from xpeek import __version__
+from xpeek.app_control import stop_running_popup
 from xpeek.config import CONFIG_PATH, CONFIG_SCHEMA_URL, Config
 from xpeek.ocr.install import (
     default_engine,
@@ -344,6 +345,10 @@ def update(tag: str | None = None, ocr_engines: str | None = None) -> None:
     # Check again after the network operation; do not carry a concurrent edit into the release.
     if git_output("status", "--porcelain", "--untracked-files=normal"):
         raise RuntimeError("Checkout changed while fetching; commit or stash changes and retry.")
+    if stop_running_popup():
+        print("Stopped the popup and OCR models.", flush=True)
+    if git_output("status", "--porcelain", "--untracked-files=normal"):
+        raise RuntimeError("Checkout changed while stopping the popup; commit or stash changes and retry.")
     subprocess.run([git, "switch", "--detach", target], cwd=PROJECT_DIR, check=True)
     # Run the fetched installer in a fresh interpreter, rather than using already imported code.
     subprocess.run([sys.executable, str(PROJECT_DIR / "setup.py"), "install",
@@ -372,6 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         "update", help="Fetch the latest GitHub release and reinstall, keeping installed OCR engines",
         description=("Fetch and check out the latest stable GitHub release, then run its installer. "
                      "Requires a managed installation and clean git checkout. "
+                     "Stops the popup and its OCR workers before replacing the installation. "
                      "Keeps installed OCR engines by default and never downgrades unless --tag is supplied."),
     )
     update_parser.add_argument("--tag", metavar="vX.Y.Z", help="Install a specific release tag instead of the latest")

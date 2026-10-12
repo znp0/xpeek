@@ -43,14 +43,14 @@ Removing engines keeps config unchanged and requires at least one engine to rema
 
 ## Update
 
-Close any open popup, then run from any directory:
+Run from any directory:
 
 ```bash
 xpeek update
 xpeek update --tag vX.Y.Z # Optional: choose a published release tag
 ```
 
-Update fetches the latest stable [GitHub release](https://github.com/znp0/xpeek/releases), checks it out, and runs its installer without an engine prompt. It requires a clean git checkout and keeps installed engines unless `--ocr-engines` is supplied. Newer development versions are kept unless `--tag` explicitly selects an older release. Setup refreshes the version-specific schema reference while preserving other settings and state. From the checkout, `python3 setup.py update` performs the same update.
+Update fetches and verifies the latest stable [GitHub release](https://github.com/znp0/xpeek/releases), stops the popup and its OCR workers, checks out the release, and runs its installer without an engine prompt. There is no need to wait for model expiry; active translation work may be interrupted. It requires a clean git checkout and keeps installed engines unless `--ocr-engines` is supplied. Newer development versions are kept unless `--tag` explicitly selects an older release. Setup refreshes the version-specific schema reference while preserving other settings and state. From the checkout, `python3 setup.py update` performs the same update.
 
 Verified models are reused; missing, changed, or corrupted model files are downloaded again. Dependency checks and the headless OpenCV repair step still run during installation.
 
@@ -73,6 +73,8 @@ xpeek history --watch                 # Watch history in a scrollable terminal v
 ```
 
 Normal translation calls toggle the single popup. Persistent mode appends results and follows new entries while you're at the bottom. Clipboard calls run independently; `ocr` never changes the saved region. Flags override config only for that invocation. See `xpeek --help`, command-specific help, and the [usage guide](docs/usage.md).
+
+After closing a popup, loaded OCR models remain available for 60 idle seconds. Reopening reuses them; closing again resets the countdown. Configure `ocr_keepalive_seconds` to change this duration or use `0` to release models immediately after active work finishes. Open popups keep their models loaded.
 
 ## Configure
 

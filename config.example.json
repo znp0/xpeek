@@ -5,6 +5,7 @@
   "source_lang": "auto",
   "target_lang": "en",
   "persistent_window": false,
+  "ocr_keepalive_seconds": 60,
   "ocr_engine": "paddleocr-tiny",
   "ocr_options": {
     "paddleocr-tiny": {
