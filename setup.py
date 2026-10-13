@@ -239,7 +239,7 @@ def install(ocr_engines: str | None = None) -> None:
         # and this installer script out of package builds.
         with tempfile.TemporaryDirectory(prefix="xpeek-build-") as directory:
             source = Path(directory)
-            for name in ("pyproject.toml", "README.md", "LICENSE", "NOTICE"):
+            for name in ("pyproject.toml", "README.md", "LICENSE"):
                 shutil.copy2(PROJECT_DIR / name, source / name)
             shutil.copytree(
                 PROJECT_DIR / "xpeek", source / "xpeek",

@@ -137,6 +137,6 @@ If you have any questions, you can ask me on [Discord](https://discord.gg/SZntdm
 
 ## License
 
-xpeek is licensed under [GNU AGPL-3.0-only](LICENSE). Copyright (C) 2026 NguyenXuanVinh and xpeek contributors; see [NOTICE](NOTICE) for credit and the original project link.
+xpeek is licensed under the [MIT License](LICENSE). Copyright (C) 2026 NguyenXuanVinh and xpeek contributors.
 
-When distributing xpeek or a modified version, preserve its copyright, attribution, license, and warranty notices and provide the corresponding source under the same license. If you modify xpeek and let users interact with it remotely over a network, offer those users the corresponding source. Private local use and modifications do not require publication, and using xpeek does not require unrelated software to become open source. Third-party dependencies and assets retain their respective licenses.
+You can use, modify, and redistribute xpeek, including in commercial or closed-source software, provided you retain the copyright and permission notice in copies or substantial portions of the software. Third-party dependencies and assets retain their respective licenses.
