@@ -15,7 +15,7 @@
 - Keep task-specific test scripts and build artifacts out of the repository; use temporary files and remove them when finished.
 - Never read out or commit API keys, `.env`, or user configuration containing secrets. `.env.example` must contain placeholders only.
 - Use Conventional Commits, such as `feat(gui): ...`, `fix(cli): ...`, and `docs: ...`. Keep documentation and CLI help aligned with behavior changes.
-- Do not hard-wrap Markdown prose. Keep each paragraph and list item on one source line and let the viewer wrap it visually. Preserve intentional line breaks in code blocks, tables, and other Markdown structure.
+- Do not hard-wrap prose in any non-code text, including comments, docstrings, documentation, Markdown, and plain-text notices. Keep each paragraph and list item on one source line and let the viewer or editor wrap it visually. Preserve required comment prefixes and intentional line breaks in code, tables, structured text, and verbatim third-party license text.
 
 ## Versioning
 

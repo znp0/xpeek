@@ -130,3 +130,9 @@ Tested on an Intel Core i7-12700H using 25 Wuthering Waves captures with `captur
 Small at `0.5` gave the best tested accuracy/speed balance without manual cropping on those desktop images. Separate native gamescope experiments favored Tiny at `1` for speed and dialogue retention, using different scenes from the desktop set. Grayscale sometimes changed a direction or subject, so color remains the default. Testing covered only Wuthering Waves on one machine; other games are untested. Compare your own dialogue before adopting reduced resolution. See the [OCR guide](docs/ocr.md) and [full benchmark results](docs/benchmarks.md).
 
 Capture defaults to `grim`, including gamescope upscaling. Set `capture_backend: "gamescope"` inside an engine's `ocr_options` or use `--capture-backend gamescope` for native-resolution capture on supported niri layouts. The saved or temporary region is mapped into the native game frame; unavailable capture falls back to desktop with a terminal warning. Start with OCR `scale: 1`, since scaling applies after capture. See the [capture guide](docs/capture.md) for setup and limitations.
+
+## License
+
+xpeek is licensed under [GNU AGPL-3.0-only](LICENSE). Copyright (C) 2026 NguyenXuanVinh and xpeek contributors; see [NOTICE](NOTICE) for credit and the original project link.
+
+When distributing xpeek or a modified version, preserve its copyright, attribution, license, and warranty notices and provide the corresponding source under the same license. If you modify xpeek and let users interact with it remotely over a network, offer those users the corresponding source. Private local use and modifications do not require publication, and using xpeek does not require unrelated software to become open source. Third-party dependencies and assets retain their respective licenses.
