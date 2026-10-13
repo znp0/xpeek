@@ -131,6 +131,10 @@ Small at `0.5` gave the best tested accuracy/speed balance without manual croppi
 
 Capture defaults to `grim`, including gamescope upscaling. Set `capture_backend: "gamescope"` inside an engine's `ocr_options` or use `--capture-backend gamescope` for native-resolution capture on supported niri layouts. The saved or temporary region is mapped into the native game frame; unavailable capture falls back to desktop with a terminal warning. Start with OCR `scale: 1`, since scaling applies after capture. See the [capture guide](docs/capture.md) for setup and limitations.
 
+## Contact
+
+If you have any questions, you can ask me on [Discord](https://discord.gg/SZntdmMsUW).
+
 ## License
 
 xpeek is licensed under [GNU AGPL-3.0-only](LICENSE). Copyright (C) 2026 NguyenXuanVinh and xpeek contributors; see [NOTICE](NOTICE) for credit and the original project link.
