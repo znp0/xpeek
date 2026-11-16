@@ -79,6 +79,7 @@ class Config:
     source_lang: str = "auto"
     target_lang: str = "en"
     persistent_window: bool = False
+    phone_bottom_spacing_percent: float = 30
     ocr_keepalive_seconds: int = 60
     ocr_engine: str = "rapidocr"
     ocr_options: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -114,6 +115,9 @@ class Config:
             if (type(config.ocr_keepalive_seconds) is not int
                     or not 0 <= config.ocr_keepalive_seconds <= MAX_OCR_KEEPALIVE_SECONDS):
                 raise ValueError(f"ocr_keepalive_seconds must be an integer between 0 and {MAX_OCR_KEEPALIVE_SECONDS}")
+            spacing = config.phone_bottom_spacing_percent
+            if type(spacing) not in (int, float) or not 0 <= spacing <= 100:
+                raise ValueError("phone_bottom_spacing_percent must be a finite number from 0 to 100")
             validate_settings(config.ocr_engine, config.ocr_options)
             return config
         except (TypeError, ValueError) as exc:

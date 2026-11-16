@@ -67,12 +67,15 @@ xpeek translate -p gemini -s auto -t vi
 xpeek translate -p clipboard          # Copy text from the saved region
 xpeek ocr                            # Select a temporary region and copy text
 xpeek ocr -p google                   # Translate a temporary region
+xpeek phone                           # Pair a phone directly (TCP 38853)
 xpeek show-history -n 10              # Open recent translations
 xpeek reset-size                      # Restore default popup sizes
 xpeek history --watch                 # Watch history in a scrollable terminal view
 ```
 
 Normal translation calls toggle the single popup. Persistent mode appends results and follows new entries while you're at the bottom. Clipboard calls run independently; `ocr` never changes the saved region. Flags override config only for that invocation. See `xpeek --help`, command-specific help, and the [usage guide](docs/usage.md).
+
+Run `xpeek phone` to pair directly and release the terminal once the viewer starts, or use the phone button beside the popup’s close button to show translations in a phone browser on the same local network. Open the plain address or scan the QR, then approve the matching code on the desktop. The desktop popup stays hidden after connection. Use **Return to desktop** on the phone to bring it back. In phone mode every translation hotkey translates; persistent mode keeps the latest 10 entries. If the phone stops checking in for 15 seconds, the popup returns automatically. See the [phone guide](docs/usage.md#phone-display).
 
 After closing a popup, loaded OCR models remain available for 60 idle seconds. Reopening reuses them; closing again resets the countdown. Configure `ocr_keepalive_seconds` to change this duration or use `0` to release models immediately after active work finishes. Open popups keep their models loaded.
 

@@ -1,15 +1,18 @@
 """GTK4 translation popup, using layer-shell where available."""
 from __future__ import annotations
 
+import io
 import json
 import os
 import signal
 import sys
+import time
 from concurrent.futures import CancelledError, ThreadPoolExecutor
 from ctypes import CDLL
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from queue import Empty
 from threading import Event
 
 # Load layer-shell before GTK/libwayland, as required by its Python bindings.
@@ -43,11 +46,11 @@ from .capture import CaptureCancelled, CaptureError, capture_screen, select_regi
 from .config import Config, Region
 from .history import HistoryStore
 from .ocr import OcrError, extract_text, shutdown_backends
-from .providers import TranslationError, get_translator
+from .phone import phone_notice
+from .providers import API_KEY_ENV, TranslationError, get_translator
 from .window_state import MIN_HEIGHT, MIN_WIDTH, WindowState, reset_saved_size
 
 DISPLAY_LIMIT = 10
-API_KEY_ENV = {"deepl": "DEEPL_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 
 
 @dataclass(eq=False)
@@ -175,6 +178,16 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self.persistent_height if self.persistent else self.normal_height))
         self.state = replace(self.preferred)
         self.closed = False
+        self.phone = None
+        self.phone_port = None
+        self.phone_active = False
+        self.phone_pairing = None
+        self.phone_requests_box = None
+        self.phone_requests_signature = None
+        self.phone_qr_content = None
+        self.pairing_restore_desktop = False
+        self.phone_source = None
+        self.phone_held = False
         self.entries = []
         self.rendered_entries = []
         self.jobs = {}
@@ -254,9 +267,13 @@ class OverlayWindow(Gtk.ApplicationWindow):
         handle.set_cursor_from_name("grab")
         self._add_drag(handle, "move")
         header.append(handle)
+        phone = Gtk.Button(icon_name="phone-symbolic")
+        phone.set_tooltip_text("Move translations to phone")
+        phone.connect("clicked", lambda _button: self._pair_phone())
+        header.append(phone)
         close = Gtk.Button(icon_name="window-close-symbolic")
         close.set_tooltip_text("Close")
-        close.connect("clicked", lambda _button: self.dismiss())
+        close.connect("clicked", lambda _button: self.dismiss("desktop close button"))
         header.append(close)
         body.append(header)
 
@@ -301,6 +318,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self._add_drag(grip, edge)
             grid.attach(grip, column, row, 1, 1)
         window.set_child(grid)
+        window.set_focus(close)
 
     def _add_drag(self, widget, edge):
         gesture = Gtk.GestureDrag(button=1)
@@ -452,7 +470,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self._sync_output_windows()
 
     def _sync_output_windows(self):
-        if self.closed or not self.layer or self.monitor is None:
+        if self.closed or self.phone_active or self.phone_pairing is not None or not self.layer or self.monitor is None:
             return
         home = self.monitor.get_geometry()
         x, y = home.x + (self.state.x or 0), home.y + self.state.y
@@ -690,6 +708,22 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self._queue_save()
         self._render_entries()
 
+    def disable_persistent(self):
+        if not self.persistent:
+            return
+        self._cancel_drag_for_layout()
+        self.persistent_height = self.preferred.height
+        self.preferred.height = self.normal_height
+        self.persistent = False
+        if self.layer:
+            self._place_on_monitor(self.monitor)
+            self._apply_geometry()
+        else:
+            self.state.height = self.normal_height
+            self.set_default_size(self.state.width, self.state.height)
+        self._queue_save()
+        self._publish_phone()
+
     def reset_size(self):
         self._cancel_drag_for_layout()
         if self.drag_finish_source is not None:
@@ -712,9 +746,225 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self.set_default_size(self.state.width, self.state.height)
         return saved.save()
 
+    def _pair_phone(self):
+        if self.phone_pairing is not None:
+            self.phone_pairing.present()
+            return self.phone is not None and self.phone.thread.is_alive()
+        dialog = Gtk.Window(title="Connect your phone", transient_for=self, application=self.app)
+        dialog.set_default_size(380, 540)
+        dialog.add_css_class("xpeek")
+        if self.layer:
+            LayerShell.init_for_window(dialog)
+            LayerShell.set_namespace(dialog, "xpeek-pairing")
+            LayerShell.set_layer(dialog, LayerShell.Layer.OVERLAY)
+            LayerShell.set_exclusive_zone(dialog, -1)
+            keyboard = (LayerShell.KeyboardMode.ON_DEMAND
+                        if LayerShell.get_protocol_version() >= 4
+                        else LayerShell.KeyboardMode.NONE)
+            LayerShell.set_keyboard_mode(dialog, keyboard)
+            monitor = self.monitor or LayerShell.get_monitor(self)
+            if monitor is not None and monitor in list(self.monitors):
+                LayerShell.set_monitor(dialog, monitor)
+                dialog.set_default_size(380, min(540, max(240, monitor.get_geometry().height - 48)))
+            dialog.set_decorated(False)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        dialog.set_child(scroll)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        for method in (box.set_margin_top, box.set_margin_bottom, box.set_margin_start, box.set_margin_end):
+            method(16)
+        scroll.set_child(box)
+        self.pairing_restore_desktop = self.get_visible()
+        self.phone_pairing = dialog
+        self.phone_requests_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.phone_requests_signature = None
+        box.append(self.phone_requests_box)
+        qr_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.phone_qr_content = qr_box
+        box.append(qr_box)
+        success = False
+        try:
+            import qrcode
+
+            from .phone import PhoneServer
+            if self.phone is None:
+                self.phone = PhoneServer() if self.phone_port is None else PhoneServer(self.phone_port)
+                self.phone_source = GLib.timeout_add(250, self._phone_tick)
+                self._publish_phone()
+            with self.phone.lock:
+                connected = time.monotonic() - self.phone.last_seen < 10
+            if connected and not self.phone.pending_requests():
+                self._set_phone_output(True)
+                return True
+            links = self.phone.links()
+            if not links:
+                raise RuntimeError("No local IPv4 address found. Connect the desktop to your local network and retry.")
+            label = Gtk.Label(label="Open the address on your phone, or scan the QR.\nApprove the matching code here to connect.")
+            label.set_wrap(True)
+            qr_box.append(label)
+            image = qrcode.make(links[0])
+            data = io.BytesIO()
+            image.save(data, format="PNG")
+            texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(data.getvalue()))
+            picture = Gtk.Picture.new_for_paintable(texture)
+            picture.set_size_request(260, 260)
+            qr_box.append(picture)
+            for link in links:
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                address = Gtk.Entry()
+                address.set_text(link)
+                address.set_editable(False)
+                address.set_width_chars(12)
+                address.set_hexpand(True)
+                row.append(address)
+                copy = Gtk.Button(icon_name="edit-copy-symbolic")
+                copy.set_tooltip_text("Copy pairing link")
+                copy.set_valign(Gtk.Align.CENTER)
+                copy.connect("clicked", lambda _button, url=link: self.get_clipboard().set(url))
+                row.append(copy)
+                qr_box.append(row)
+            hint = Gtk.Label(label="If connection fails, check that your network allows devices to reach each other and the displayed TCP port is allowed by your firewall.")
+            hint.set_wrap(True)
+            qr_box.append(hint)
+            success = True
+        except Exception as exc:  # noqa: BLE001 - Keep the desktop usable when pairing fails.
+            phone_notice(f"pairing failed: {exc}")
+            label = Gtk.Label(label=f"Cannot pair phone: {exc}")
+            label.set_wrap(True)
+            qr_box.append(label)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda _button: self._cancel_pairing())
+        box.append(cancel)
+        dialog.set_focus(cancel)
+        dialog.connect("close-request", lambda _dialog: self._cancel_pairing())
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda _controller, key, _code, _modifiers: key == Gdk.KEY_Escape and self._cancel_pairing())
+        dialog.add_controller(keys)
+        self._refresh_pairing_requests()
+        self._cancel_drag_for_layout()
+        self._clear_output_windows()
+        self.set_visible(False)
+        dialog.present()
+        return success
+
+    def _refresh_pairing_requests(self):
+        if self.phone is None or self.phone_requests_box is None:
+            return
+        requests = self.phone.pending_requests()
+        signature = tuple(request["id"] for request in requests)
+        if signature == self.phone_requests_signature:
+            return
+        self.phone_requests_signature = signature
+        container = self.phone_requests_box
+        while (child := container.get_first_child()) is not None:
+            container.remove(child)
+        container.set_visible(bool(requests))
+        self.phone_qr_content.set_visible(not requests)
+        for request in requests:
+            label = Gtk.Label(label=f"{request['label']} requests pairing.\nConfirm code {request['code']} matches your phone.", xalign=0)
+            label.set_wrap(True)
+            container.append(label)
+            address = Gtk.Label(label=request["address"], xalign=0)
+            address.add_css_class("pairing-address")
+            container.append(address)
+            buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            for title, allowed in (("Approve", True), ("Reject", False)):
+                button = Gtk.Button(label=title)
+                button.connect("clicked", lambda _button, ticket=request["id"], approve=allowed: self._decide_phone_pairing(ticket, approve))
+                buttons.append(button)
+            container.append(buttons)
+
+    def _decide_phone_pairing(self, ticket, approve):
+        if self.phone is None:
+            return
+        if self.phone.decide_pairing(ticket, approve) and approve:
+            self._set_phone_output(True)
+        else:
+            self._refresh_pairing_requests()
+
+    def _cancel_pairing(self):
+        if self.phone is not None:
+            for request in self.phone.pending_requests():
+                self.phone.decide_pairing(request["id"], False)
+        restore = self.pairing_restore_desktop
+        self._close_pairing()
+        if not self.closed and not self.get_visible() and not self.phone_active:
+            if restore or self.entries or self.capture_jobs:
+                self.present()
+                self._sync_output_windows()
+            else:
+                self.dismiss("pairing canceled")
+        return True
+
+    def _close_pairing(self):
+        dialog, self.phone_pairing = self.phone_pairing, None
+        self.pairing_restore_desktop = False
+        self.phone_requests_box = None
+        self.phone_requests_signature = None
+        self.phone_qr_content = None
+        if dialog is not None:
+            dialog.destroy()
+        return True
+
+    def _set_phone_output(self, active):
+        if not active and not self.phone_active and self.phone_pairing is not None:
+            self._cancel_pairing()
+            return
+        self._close_pairing()
+        if active == self.phone_active:
+            return
+        self.phone_active = active
+        if active:
+            self.app.hold()
+            self.phone_held = True
+            with self.phone.lock:
+                self.phone.last_seen = time.monotonic()
+            self._clear_output_windows()
+            self.set_visible(False)
+        else:
+            self.present()
+            self._sync_output_windows()
+            if self.phone_held:
+                self.phone_held = False
+                self.app.release()
+        self._publish_phone()
+
+    def _publish_phone(self):
+        if self.phone is None or self.closed:
+            return
+        entries = (self.entries if self.persistent else self.entries[-1:]) if self.phone_active else []
+        self.phone.publish({"phone": self.phone_active, "bottom_spacing_percent": self.config.phone_bottom_spacing_percent, "entries": [
+            {"heading": entry.heading, "text": entry.text} for entry in entries]})
+
+    def _phone_tick(self):
+        if self.closed or self.phone is None:
+            return GLib.SOURCE_REMOVE
+        while True:
+            try:
+                action = self.phone.actions.get_nowait()
+            except Empty:
+                break
+            if action == "activate" and self.phone_pairing is not None:
+                self._set_phone_output(True)
+            elif action == "desktop":
+                self._set_phone_output(False)
+            elif action == "end":
+                self.dismiss("phone End session")
+                return GLib.SOURCE_REMOVE
+        if self.phone.pending_requests() and self.phone_pairing is None:
+            self._pair_phone()
+        self._refresh_pairing_requests()
+        with self.phone.lock:
+            expired = time.monotonic() - self.phone.last_seen > 15
+        if self.phone_active and expired:
+            self._set_phone_output(False)
+        return GLib.SOURCE_CONTINUE
+
     def submit_translation(self, config, image, credentials=None):
         heading = f"{datetime.now().astimezone():%H:%M:%S} · {config.provider} · {config.source_lang} → {config.target_lang}"
         entry = DisplayEntry(heading, "…")
+        if self.phone_active and not self.persistent:
+            self.entries = []
         self.entries.append(entry)
         self.entries = self.entries[-DISPLAY_LIMIT:]
         self._render_entries()
@@ -743,6 +993,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
                 self._queue_scroll_latest()
 
     def _render_entries(self):
+        self._publish_phone()
         adjustment = self.scroll.get_vadjustment()
         follow = self.scroll_source is not None or (
             adjustment.get_value() + adjustment.get_page_size() >= adjustment.get_upper() - 5)
@@ -825,18 +1076,28 @@ class OverlayWindow(Gtk.ApplicationWindow):
 
     def _key_pressed(self, _controller, key, _keycode, _modifiers):
         if key == Gdk.KEY_Escape:
-            self.dismiss()
+            self.dismiss("desktop Escape")
             return True
         return False
 
     def _close_requested(self, _window):
-        self.dismiss()
+        self.dismiss("desktop close request")
         return True
 
-    def dismiss(self):
+    def dismiss(self, reason="session closed"):
         if self.closed:
             return
         self.closed = True
+        self._close_pairing()
+        if self.phone_source is not None:
+            GLib.source_remove(self.phone_source)
+            self.phone_source = None
+        if self.phone is not None:
+            self.phone.close(reason)
+            self.phone = None
+        if self.phone_held:
+            self.phone_held = False
+            self.app.release()
         self.capture_cancelled.set()
         for future in list(self.capture_jobs):
             future.cancel()
@@ -860,10 +1121,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.destroy()
 
 
-def run_gui_translation(
-    config: Config, mode: str = "translate", *, persistent: bool | None = None,
-    region: Region | None = None, temporary: bool = False, display_limit: int = DISPLAY_LIMIT,
-) -> int:
+def _run_gui_translation(request: dict, *, on_ready=None) -> int:
     initialized = Gtk.init_check()
     display = Gdk.Display.get_default() or Gdk.Display.open(None)
     if not initialized or display is None:
@@ -875,6 +1133,14 @@ def run_gui_translation(
     sources = []
     window = None
     local_exit_status = None
+    notified = False
+
+    def notify(status):
+        nonlocal notified
+        if on_ready is not None and not notified:
+            notified = True
+            on_ready(status)
+
     app.capture_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="xpeek-capture")
     app.ocr_started = False
     app.stopping = False
@@ -899,14 +1165,14 @@ def run_gui_translation(
                     print_error(command, f"Warning: {result.warning}\n")
                 target.submit_translation(current, image, request["credentials"])
                 image = None  # The translation worker owns this image now.
-                if not target.get_visible():
+                if not target.get_visible() and not target.phone_active and target.phone_pairing is None:
                     target.present()
         except (CancelledError, CaptureCancelled):
             pass
         except Exception as exc:  # noqa: BLE001 - Return failures to the requesting CLI.
             status = 1
             print_error(command, f"Error: {exc}\n")
-            if not target.closed and not target.entries and not target.capture_jobs:
+            if not target.closed and not target.entries and not target.capture_jobs and target.phone is None:
                 target.dismiss()
         finally:
             if image is not None:
@@ -916,6 +1182,7 @@ def run_gui_translation(
                 # GApplication.run() retains the initial handler's synchronous
                 # status for the primary process; preserve its deferred result.
                 local_exit_status = status
+                notify(status)
             done = getattr(command, "done", None)
             if done is not None:
                 done()
@@ -932,7 +1199,7 @@ def run_gui_translation(
             application.hold()
             try:
                 if window is not None:
-                    window.dismiss()
+                    window.dismiss("shutdown request")
             finally:
                 application.release()
 
@@ -945,6 +1212,7 @@ def run_gui_translation(
             .xpeek textview, .xpeek textview text { background: #101010; color: #ffffff;
                 font-family: sans-serif; font-size: 18px; }
             .xpeek .popup-header { padding: 2px 6px; }
+            .xpeek .pairing-address { color: #aaaaaa; font-size: 0.85em; }
             .xpeek button { background: transparent; color: #ffffff; border: none;
                 box-shadow: none; min-width: 20px; min-height: 20px; padding: 2px; }
             .xpeek button:hover { background: #303030; }
@@ -953,14 +1221,14 @@ def run_gui_translation(
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         def dismiss():
             if window is not None:
-                window.dismiss()
+                window.dismiss("desktop dismiss signal")
             return GLib.SOURCE_CONTINUE
 
         for sig in (signal.SIGUSR1, signal.SIGUSR2):
             sources.append(GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, dismiss))
 
-    def command_line(application, command):
-        nonlocal window
+    def handle_command_line(application, command):
+        nonlocal window, local_exit_status
         try:
             if application.stopping:
                 raise RuntimeError("The popup is stopping for an update; retry after the update finishes.")
@@ -976,11 +1244,26 @@ def run_gui_translation(
                 application.set_inactivity_timeout(current.ocr_keepalive_seconds * 1000)
             if window is not None and window.closed:
                 window = None
+            if window is not None:
+                window.config = replace(window.config, phone_bottom_spacing_percent=current.phone_bottom_spacing_percent)
+                window._publish_phone()
+            if request["mode"] == "phone":
+                if window is None:
+                    window = OverlayWindow(application, current, "empty")
+                port = request.get("phone_port")
+                if port is not None and window.phone is not None and window.phone.http.server_port != port:
+                    raise RuntimeError(f"This session is listening on TCP {window.phone.http.server_port}; end the session before changing ports.")
+                window.phone_port = port
+                status = 0 if window._pair_phone() else 1
+                command.set_exit_status(status)
+                if not command.get_is_remote():
+                    local_exit_status = status
+                return status
             append = requested if requested is not None else (
                 window.persistent if window is not None else request["config"]["persistent_window"])
             # Decide whether to close before selecting or capturing any region.
-            if window is not None and (request["mode"] == "last" or not append):
-                window.dismiss()
+            if window is not None and (request["mode"] == "last" or (not append and not window.phone_active and window.phone_pairing is None)):
+                window.dismiss("history toggle" if request["mode"] == "last" else "translation toggle")
                 return 0
             if request["mode"] != "last":
                 selected = select_region() if request["temporary"] else (
@@ -995,6 +1278,8 @@ def run_gui_translation(
                     window.present()
             elif append:
                 window.enable_persistent()
+            elif window.phone_active:
+                window.disable_persistent()
             if request["mode"] != "last":
                 # A separate worker captures every request before queued OCR work.
                 target = window
@@ -1007,6 +1292,7 @@ def run_gui_translation(
                 except Exception:
                     application.release()
                     raise
+                command.xpeek_capture_pending = True
                 target.capture_jobs.add(future)
                 future.add_done_callback(lambda completed: GLib.idle_add(
                     capture_finished, target, current, request, command, completed))
@@ -1016,23 +1302,34 @@ def run_gui_translation(
             print_error(command, message)
             if window is None:
                 application.quit()
-            elif not window.get_visible() and not window.entries and not window.capture_jobs:
+            elif not window.get_visible() and not window.entries and not window.capture_jobs and window.phone is None:
                 window.dismiss()
+            command.set_exit_status(1)
+            if not command.get_is_remote():
+                local_exit_status = 1
             return 1
+
+    def command_line(application, command):
+        status = handle_command_line(application, command)
+        if not command.get_is_remote() and not getattr(command, "xpeek_capture_pending", False):
+            notify(status)
+            if status and on_ready is not None:
+                if window is not None:
+                    window.dismiss("startup failed")
+                application.quit()
+        return status
 
     app.connect("startup", startup)
     app.connect("command-line", command_line)
     try:
-        # GApplication forwards this in-memory request to the primary instance.
-        # Credentials never enter OS argv, configuration, or temporary files.
-        request = {"config": asdict(config), "mode": mode, "persistent": persistent,
-                   "region": asdict(region) if region is not None else None,
-                   "temporary": temporary, "display_limit": display_limit,
-                   "gamescope_display": os.environ.get("GAMESCOPE_WAYLAND_DISPLAY"),
-                   "credentials": {name: os.environ.get(name) for name in API_KEY_ENV.values()}}
+        # GApplication forwards the in-memory request; credentials never enter OS argv.
         status = app.run(["xpeek", json.dumps(request)])
-        return status if local_exit_status is None else local_exit_status
+        status = status if local_exit_status is None else local_exit_status
+        notify(status)
+        return status
     finally:
+        if window is not None and not window.closed:
+            window.dismiss("application exiting")
         for source in sources:
             GLib.source_remove(source)
         app.capture_executor.shutdown(wait=True)

@@ -11,6 +11,8 @@ from typing import Any
 
 from .base import TranslationError, Translator
 
+API_KEY_ENV = {"deepl": "DEEPL_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
+
 
 def _load_google(options: dict[str, Any]) -> Translator:
     from .google import GoogleTranslator
