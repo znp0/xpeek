@@ -30,6 +30,8 @@ Only one translation popup is used. In normal mode, a translation invocation clo
 
 Persistent appending follows new entries only while already at the bottom. Scrolling up preserves the reading position. Trimming old display entries never removes saved history. Persistent and normal heights are remembered separately; their initial heights are 700 and 400 logical pixels.
 
+Short popups hide the trailing blank lines when the text area has room for fewer than six lines. Taller popups keep that extra bottom space; spacing between entries stays the same.
+
 Closing a popup keeps its process and loaded OCR models alive for 60 idle seconds by default. Reopening reuses those models and cancels the countdown; closing again resets it. Both popup modes retain models while open, and active work finishes before the countdown starts. Configure `ocr_keepalive_seconds` to change the duration or set `0` to exit immediately after closing and finishing work. The initial terminal invocation remains running during retention; later commands return through the existing process. Clipboard-only commands do not use or extend this cache.
 
 `xpeek reset-size` restores the width to 500 and both heights to their defaults, in logical pixels. An open popup resizes immediately without changing its position, content, or mode. With no popup open, the command only updates saved sizes for the next opening.

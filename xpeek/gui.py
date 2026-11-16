@@ -268,6 +268,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
         if window is self:
             self.buffer = text.get_buffer()
             self.heading_tag = self.buffer.create_tag("heading", foreground="#aaaaaa", scale=0.8)
+            self.end_padding_tag = self.buffer.create_tag("end-padding")
             self.end_mark = self.buffer.create_mark("latest", self.buffer.get_end_iter(), False)
             self.text = text
         else:
@@ -278,6 +279,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
         scroll.set_child(text)
         if window is self:
             self.scroll = scroll
+            self.padding_bounds = (0, 0)
+            scroll.get_vadjustment().connect("changed", self._update_end_padding)
         else:
             window.scroll = scroll
         scrolling = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.BOTH_AXES)
@@ -724,10 +727,26 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self.jobs[future] = image
         future.add_done_callback(lambda done: GLib.idle_add(self._translation_finished, entry, done))
 
+    def _update_end_padding(self, adjustment):
+        height = adjustment.get_page_size()
+        if height <= 0:
+            return
+        upper, page_size = self.padding_bounds
+        follow = adjustment.get_value() + page_size >= upper - 5
+        self.padding_bounds = (adjustment.get_upper(), height)
+        _, line_height = self.text.create_pango_layout("Ag").get_pixel_size()
+        usable_height = height - self.text.get_top_margin() - self.text.get_bottom_margin()
+        compact = usable_height < 6 * line_height
+        if self.end_padding_tag.get_property("invisible") != compact:
+            self.end_padding_tag.set_property("invisible", compact)
+            if follow:
+                self._queue_scroll_latest()
+
     def _render_entries(self):
         adjustment = self.scroll.get_vadjustment()
         follow = self.scroll_source is not None or (
             adjustment.get_value() + adjustment.get_page_size() >= adjustment.get_upper() - 5)
+        self.buffer.remove_tag(self.end_padding_tag, self.buffer.get_start_iter(), self.buffer.get_end_iter())
         for entry in self.rendered_entries:
             if entry not in self.entries:
                 self.buffer.delete(self.buffer.get_iter_at_mark(entry.start), self.buffer.get_iter_at_mark(entry.end))
@@ -757,11 +776,19 @@ class OverlayWindow(Gtk.ApplicationWindow):
                     self.buffer.move_mark(entry.body_end, self.buffer.get_iter_at_offset(start + len(entry.text)))
             entry.rendered_text = entry.text
         self.rendered_entries = self.entries.copy()
+        if self.entries:
+            # Keep entry separators visible; only the final breathing room yields to a short viewport.
+            self.buffer.apply_tag(self.end_padding_tag,
+                                  self.buffer.get_iter_at_mark(self.entries[-1].body_end),
+                                  self.buffer.get_end_iter())
         self.buffer.move_mark(self.end_mark, self.buffer.get_end_iter())
         if follow:
-            self.scroll_frames = 0
-            if self.scroll_source is None:
-                self.scroll_source = self.add_tick_callback(self._scroll_latest)
+            self._queue_scroll_latest()
+
+    def _queue_scroll_latest(self):
+        self.scroll_frames = 0
+        if self.scroll_source is None:
+            self.scroll_source = self.add_tick_callback(self._scroll_latest)
 
     def _scroll_latest(self, _widget, _clock):
         # Keep following through asynchronous TextView layout. Scrolling by the
