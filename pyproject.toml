@@ -31,6 +31,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 packages = ["xpeek", "xpeek.providers", "xpeek.ocr"]
 
+[tool.setuptools.package-data]
+xpeek = ["remote.html"]
+
 [tool.ruff]
 target-version = "py310"
 

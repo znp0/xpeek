@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>xpeek</title>
+    <style>
+      body {
+        background: #101010;
+        color: #fff;
+        font: 22px system-ui;
+        margin: 20px;
+        overflow-wrap: anywhere;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        background: #101010;
+        padding: 8px 0;
+      }
+
+      button {
+        font: 16px system-ui;
+        padding: 10px;
+        margin: 4px;
+      }
+
+      small {
+        color: #aaa;
+        font-size: 14px;
+      }
+
+      article {
+        white-space: pre-wrap;
+        margin: 24px 0;
+      }
+
+      #status {
+        font-size: 16px;
+      }
+
+      main:not(:empty) {
+        padding-bottom: calc(var(--bottom-spacing-percent, 30) * 1vh);
+        padding-bottom: calc(var(--bottom-spacing-percent, 30) * 1dvh);
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <strong>xpeek</strong>
+      <div id="status">Connecting…</div>
+      <button id="retry" hidden>Request approval again</button>
+      <button id="desktop" hidden>Return to desktop</button>
+      <button id="end" hidden>End session</button>
+    </nav>
+    <main></main>
+    <script>
+      const main = document.querySelector("main"),
+        status = document.querySelector("#status");
+      const desktop = document.querySelector("#desktop"),
+        end = document.querySelector("#end"),
+        retry = document.querySelector("#retry");
+      let token = "",
+        previous = "",
+        stopped = false,
+        controller = null,
+        lastHeartbeat = -Infinity;
+
+      async function request(path) {
+        const r = await fetch(path, {
+          method: "POST",
+          headers: { Authorization: "Bearer " + token },
+          cache: "no-store",
+        });
+        if (r.status === 401) {
+          stopped = true;
+          main.replaceChildren();
+          status.textContent = "Session ended; reload to request approval";
+          controller?.abort();
+        }
+        if (!r.ok) throw Error("Session unavailable");
+        return r;
+      }
+
+      function render(state) {
+        status.textContent = state.remote
+          ? "Showing translations here"
+          : "Desktop active · use its remote button to transfer";
+        const content = JSON.stringify([
+          state.entries,
+          state.bottom_spacing_percent,
+        ]);
+        if (content === previous) return;
+
+        const follow =
+            window.scrollY + innerHeight >=
+            document.documentElement.scrollHeight - 30,
+          oldY = window.scrollY;
+        main.style.setProperty(
+          "--bottom-spacing-percent",
+          state.bottom_spacing_percent ?? 30,
+        );
+        main.replaceChildren(
+          ...state.entries.map((e) => {
+            const a = document.createElement("article"),
+              h = document.createElement("small"),
+              t = document.createElement("div");
+            h.textContent = e.heading;
+            t.textContent = e.text;
+            a.append(h, t);
+            return a;
+          }),
+        );
+        if (follow) window.scrollTo(0, document.documentElement.scrollHeight);
+        else window.scrollTo(0, oldY);
+        previous = content;
+      }
+
+      async function readEvents(path, credential, receive) {
+        controller = new AbortController();
+        const abort = controller;
+        let lastFrame = performance.now(),
+          reader = null;
+        const watchdog = setInterval(() => {
+          if (performance.now() - lastFrame > 15000) abort.abort();
+        }, 1000);
+
+        try {
+          const r = await fetch(path, {
+            headers: { Authorization: "Bearer " + credential },
+            cache: "no-store",
+            signal: abort.signal,
+          });
+          if (!r.ok) {
+            const error = Error("Stream unavailable");
+            error.status = r.status;
+            throw error;
+          }
+          reader = r.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (!stopped) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let boundary;
+
+            while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+              const frame = buffer.slice(0, boundary);
+              buffer = buffer.slice(boundary + 2);
+              lastFrame = performance.now();
+              if (receive(frame) === false) return;
+            }
+          }
+        } finally {
+          clearInterval(watchdog);
+          if (reader) await reader.cancel().catch(() => {});
+        }
+      }
+
+      function data(frame) {
+        const text = frame
+          .split("\n")
+          .filter((line) => line.startsWith("data: "))
+          .map((line) => line.slice(6))
+          .join("\n");
+        return text ? JSON.parse(text) : null;
+      }
+
+      async function stream() {
+        desktop.hidden = false;
+        end.hidden = false;
+        await request("/activate").catch(() => {});
+
+        while (!stopped) {
+          try {
+            await readEvents("/events", token, (frame) => {
+              if (frame.startsWith("event: end")) {
+                stopped = true;
+                main.replaceChildren();
+                status.textContent = "Session ended";
+                return false;
+              }
+              const state = data(frame);
+              if (state) render(state);
+              if (performance.now() - lastHeartbeat >= 4000) {
+                lastHeartbeat = performance.now();
+                request("/heartbeat").catch(() => {});
+              }
+            });
+          } catch (e) {
+            if (e.status === 401) {
+              stopped = true;
+              main.replaceChildren();
+              status.textContent = "Session ended; reload to request approval";
+            }
+          }
+          if (!stopped) {
+            status.textContent = "Disconnected · reconnecting…";
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+        desktop.hidden = true;
+        end.hidden = true;
+      }
+
+      async function pair() {
+        retry.hidden = true;
+        status.textContent = "Requesting desktop approval…";
+
+        try {
+          const r = await fetch("/pair", {
+            method: "POST",
+            headers: { "X-Xpeek-Pairing": "1" },
+            cache: "no-store",
+          });
+          if (!r.ok)
+            throw Error(
+              r.status === 429
+                ? "Too many pairing requests; try again shortly"
+                : "Desktop unavailable",
+            );
+          const pairing = await r.json();
+          let decided = false;
+          status.textContent =
+            "Pairing code " +
+            pairing.code +
+            " · approve the matching code on your desktop";
+
+          while (!decided) {
+            try {
+              await readEvents("/pair-events", pairing.ticket, (frame) => {
+                const result = data(frame);
+                if (!result) return;
+                if (result.status === "pending") return;
+                decided = true;
+                if (result.status === "approved") token = result.token;
+                else
+                  status.textContent =
+                    result.status === "rejected"
+                      ? "Desktop rejected this request"
+                      : "Pairing request expired";
+                return false;
+              });
+            } catch (e) {
+              if (e.status === 401) {
+                decided = true;
+                status.textContent = "Pairing request expired";
+              }
+            }
+            if (!decided)
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          if (token) await stream();
+          else retry.hidden = false;
+        } catch (e) {
+          status.textContent = e.message;
+          retry.hidden = false;
+        }
+      }
+
+      desktop.onclick = () => request("/desktop").catch(() => {});
+      end.onclick = async () => {
+        try {
+          await request("/end");
+        } finally {
+          stopped = true;
+          controller?.abort();
+          main.replaceChildren();
+          status.textContent = "Session ended";
+        }
+      };
+      retry.onclick = pair;
+      pair();
+    </script>
+  </body>
+</html>
