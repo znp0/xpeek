@@ -46,8 +46,8 @@ from .capture import CaptureCancelled, CaptureError, capture_screen, select_regi
 from .config import Config, Region
 from .history import HistoryStore
 from .ocr import OcrError, extract_text, shutdown_backends
-from .phone import phone_notice
 from .providers import API_KEY_ENV, TranslationError, get_translator
+from .remote import remote_notice
 from .window_state import MIN_HEIGHT, MIN_WIDTH, WindowState, reset_saved_size
 
 DISPLAY_LIMIT = 10
@@ -178,16 +178,16 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self.persistent_height if self.persistent else self.normal_height))
         self.state = replace(self.preferred)
         self.closed = False
-        self.phone = None
-        self.phone_port = None
-        self.phone_active = False
-        self.phone_pairing = None
-        self.phone_requests_box = None
-        self.phone_requests_signature = None
-        self.phone_qr_content = None
+        self.remote = None
+        self.remote_port = None
+        self.remote_active = False
+        self.remote_pairing = None
+        self.remote_requests_box = None
+        self.remote_requests_signature = None
+        self.remote_qr_content = None
         self.pairing_restore_desktop = False
-        self.phone_source = None
-        self.phone_held = False
+        self.remote_source = None
+        self.remote_held = False
         self.entries = []
         self.rendered_entries = []
         self.jobs = {}
@@ -267,10 +267,10 @@ class OverlayWindow(Gtk.ApplicationWindow):
         handle.set_cursor_from_name("grab")
         self._add_drag(handle, "move")
         header.append(handle)
-        phone = Gtk.Button(icon_name="phone-symbolic")
-        phone.set_tooltip_text("Move translations to phone")
-        phone.connect("clicked", lambda _button: self._pair_phone())
-        header.append(phone)
+        remote = Gtk.Button(icon_name="web-browser-symbolic")
+        remote.set_tooltip_text("Move translations to remote browser")
+        remote.connect("clicked", lambda _button: self._pair_remote())
+        header.append(remote)
         close = Gtk.Button(icon_name="window-close-symbolic")
         close.set_tooltip_text("Close")
         close.connect("clicked", lambda _button: self.dismiss("desktop close button"))
@@ -470,7 +470,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
         self._sync_output_windows()
 
     def _sync_output_windows(self):
-        if self.closed or self.phone_active or self.phone_pairing is not None or not self.layer or self.monitor is None:
+        if self.closed or self.remote_active or self.remote_pairing is not None or not self.layer or self.monitor is None:
             return
         home = self.monitor.get_geometry()
         x, y = home.x + (self.state.x or 0), home.y + self.state.y
@@ -722,7 +722,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self.state.height = self.normal_height
             self.set_default_size(self.state.width, self.state.height)
         self._queue_save()
-        self._publish_phone()
+        self._publish_remote()
 
     def reset_size(self):
         self._cancel_drag_for_layout()
@@ -746,11 +746,11 @@ class OverlayWindow(Gtk.ApplicationWindow):
             self.set_default_size(self.state.width, self.state.height)
         return saved.save()
 
-    def _pair_phone(self):
-        if self.phone_pairing is not None:
-            self.phone_pairing.present()
-            return self.phone is not None and self.phone.thread.is_alive()
-        dialog = Gtk.Window(title="Connect your phone", transient_for=self, application=self.app)
+    def _pair_remote(self):
+        if self.remote_pairing is not None:
+            self.remote_pairing.present()
+            return self.remote is not None and self.remote.thread.is_alive()
+        dialog = Gtk.Window(title="Connect a browser", transient_for=self, application=self.app)
         dialog.set_default_size(380, 540)
         dialog.add_css_class("xpeek")
         if self.layer:
@@ -775,31 +775,31 @@ class OverlayWindow(Gtk.ApplicationWindow):
             method(16)
         scroll.set_child(box)
         self.pairing_restore_desktop = self.get_visible()
-        self.phone_pairing = dialog
-        self.phone_requests_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        self.phone_requests_signature = None
-        box.append(self.phone_requests_box)
+        self.remote_pairing = dialog
+        self.remote_requests_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.remote_requests_signature = None
+        box.append(self.remote_requests_box)
         qr_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        self.phone_qr_content = qr_box
+        self.remote_qr_content = qr_box
         box.append(qr_box)
         success = False
         try:
             import qrcode
 
-            from .phone import PhoneServer
-            if self.phone is None:
-                self.phone = PhoneServer() if self.phone_port is None else PhoneServer(self.phone_port)
-                self.phone_source = GLib.timeout_add(250, self._phone_tick)
-                self._publish_phone()
-            with self.phone.lock:
-                connected = time.monotonic() - self.phone.last_seen < 10
-            if connected and not self.phone.pending_requests():
-                self._set_phone_output(True)
+            from .remote import RemoteServer
+            if self.remote is None:
+                self.remote = RemoteServer() if self.remote_port is None else RemoteServer(self.remote_port)
+                self.remote_source = GLib.timeout_add(250, self._remote_tick)
+                self._publish_remote()
+            with self.remote.lock:
+                connected = time.monotonic() - self.remote.last_seen < 10
+            if connected and not self.remote.pending_requests():
+                self._set_remote_output(True)
                 return True
-            links = self.phone.links()
+            links = self.remote.links()
             if not links:
                 raise RuntimeError("No local IPv4 address found. Connect the desktop to your local network and retry.")
-            label = Gtk.Label(label="Open the address on your phone, or scan the QR.\nApprove the matching code here to connect.")
+            label = Gtk.Label(label="Open the address in another browser, or scan the QR.\nApprove the matching code here to connect.")
             label.set_wrap(True)
             qr_box.append(label)
             image = qrcode.make(links[0])
@@ -828,8 +828,8 @@ class OverlayWindow(Gtk.ApplicationWindow):
             qr_box.append(hint)
             success = True
         except Exception as exc:  # noqa: BLE001 - Keep the desktop usable when pairing fails.
-            phone_notice(f"pairing failed: {exc}")
-            label = Gtk.Label(label=f"Cannot pair phone: {exc}")
+            remote_notice(f"pairing failed: {exc}")
+            label = Gtk.Label(label=f"Cannot open remote pairing: {exc}")
             label.set_wrap(True)
             qr_box.append(label)
         cancel = Gtk.Button(label="Cancel")
@@ -848,20 +848,20 @@ class OverlayWindow(Gtk.ApplicationWindow):
         return success
 
     def _refresh_pairing_requests(self):
-        if self.phone is None or self.phone_requests_box is None:
+        if self.remote is None or self.remote_requests_box is None:
             return
-        requests = self.phone.pending_requests()
+        requests = self.remote.pending_requests()
         signature = tuple(request["id"] for request in requests)
-        if signature == self.phone_requests_signature:
+        if signature == self.remote_requests_signature:
             return
-        self.phone_requests_signature = signature
-        container = self.phone_requests_box
+        self.remote_requests_signature = signature
+        container = self.remote_requests_box
         while (child := container.get_first_child()) is not None:
             container.remove(child)
         container.set_visible(bool(requests))
-        self.phone_qr_content.set_visible(not requests)
+        self.remote_qr_content.set_visible(not requests)
         for request in requests:
-            label = Gtk.Label(label=f"{request['label']} requests pairing.\nConfirm code {request['code']} matches your phone.", xalign=0)
+            label = Gtk.Label(label=f"{request['label']} requests pairing.\nConfirm code {request['code']} matches your browser.", xalign=0)
             label.set_wrap(True)
             container.append(label)
             address = Gtk.Label(label=request["address"], xalign=0)
@@ -870,25 +870,25 @@ class OverlayWindow(Gtk.ApplicationWindow):
             buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             for title, allowed in (("Approve", True), ("Reject", False)):
                 button = Gtk.Button(label=title)
-                button.connect("clicked", lambda _button, ticket=request["id"], approve=allowed: self._decide_phone_pairing(ticket, approve))
+                button.connect("clicked", lambda _button, ticket=request["id"], approve=allowed: self._decide_remote_pairing(ticket, approve))
                 buttons.append(button)
             container.append(buttons)
 
-    def _decide_phone_pairing(self, ticket, approve):
-        if self.phone is None:
+    def _decide_remote_pairing(self, ticket, approve):
+        if self.remote is None:
             return
-        if self.phone.decide_pairing(ticket, approve) and approve:
-            self._set_phone_output(True)
+        if self.remote.decide_pairing(ticket, approve) and approve:
+            self._set_remote_output(True)
         else:
             self._refresh_pairing_requests()
 
     def _cancel_pairing(self):
-        if self.phone is not None:
-            for request in self.phone.pending_requests():
-                self.phone.decide_pairing(request["id"], False)
+        if self.remote is not None:
+            for request in self.remote.pending_requests():
+                self.remote.decide_pairing(request["id"], False)
         restore = self.pairing_restore_desktop
         self._close_pairing()
-        if not self.closed and not self.get_visible() and not self.phone_active:
+        if not self.closed and not self.get_visible() and not self.remote_active:
             if restore or self.entries or self.capture_jobs:
                 self.present()
                 self._sync_output_windows()
@@ -897,73 +897,73 @@ class OverlayWindow(Gtk.ApplicationWindow):
         return True
 
     def _close_pairing(self):
-        dialog, self.phone_pairing = self.phone_pairing, None
+        dialog, self.remote_pairing = self.remote_pairing, None
         self.pairing_restore_desktop = False
-        self.phone_requests_box = None
-        self.phone_requests_signature = None
-        self.phone_qr_content = None
+        self.remote_requests_box = None
+        self.remote_requests_signature = None
+        self.remote_qr_content = None
         if dialog is not None:
             dialog.destroy()
         return True
 
-    def _set_phone_output(self, active):
-        if not active and not self.phone_active and self.phone_pairing is not None:
+    def _set_remote_output(self, active):
+        if not active and not self.remote_active and self.remote_pairing is not None:
             self._cancel_pairing()
             return
         self._close_pairing()
-        if active == self.phone_active:
+        if active == self.remote_active:
             return
-        self.phone_active = active
+        self.remote_active = active
         if active:
             self.app.hold()
-            self.phone_held = True
-            with self.phone.lock:
-                self.phone.last_seen = time.monotonic()
+            self.remote_held = True
+            with self.remote.lock:
+                self.remote.last_seen = time.monotonic()
             self._clear_output_windows()
             self.set_visible(False)
         else:
             self.present()
             self._sync_output_windows()
-            if self.phone_held:
-                self.phone_held = False
+            if self.remote_held:
+                self.remote_held = False
                 self.app.release()
-        self._publish_phone()
+        self._publish_remote()
 
-    def _publish_phone(self):
-        if self.phone is None or self.closed:
+    def _publish_remote(self):
+        if self.remote is None or self.closed:
             return
-        entries = (self.entries if self.persistent else self.entries[-1:]) if self.phone_active else []
-        self.phone.publish({"phone": self.phone_active, "bottom_spacing_percent": self.config.phone_bottom_spacing_percent, "entries": [
+        entries = (self.entries if self.persistent else self.entries[-1:]) if self.remote_active else []
+        self.remote.publish({"remote": self.remote_active, "bottom_spacing_percent": self.config.remote_bottom_spacing_percent, "entries": [
             {"heading": entry.heading, "text": entry.text} for entry in entries]})
 
-    def _phone_tick(self):
-        if self.closed or self.phone is None:
+    def _remote_tick(self):
+        if self.closed or self.remote is None:
             return GLib.SOURCE_REMOVE
         while True:
             try:
-                action = self.phone.actions.get_nowait()
+                action = self.remote.actions.get_nowait()
             except Empty:
                 break
-            if action == "activate" and self.phone_pairing is not None:
-                self._set_phone_output(True)
+            if action == "activate" and self.remote_pairing is not None:
+                self._set_remote_output(True)
             elif action == "desktop":
-                self._set_phone_output(False)
+                self._set_remote_output(False)
             elif action == "end":
-                self.dismiss("phone End session")
+                self.dismiss("remote End session")
                 return GLib.SOURCE_REMOVE
-        if self.phone.pending_requests() and self.phone_pairing is None:
-            self._pair_phone()
+        if self.remote.pending_requests() and self.remote_pairing is None:
+            self._pair_remote()
         self._refresh_pairing_requests()
-        with self.phone.lock:
-            expired = time.monotonic() - self.phone.last_seen > 15
-        if self.phone_active and expired:
-            self._set_phone_output(False)
+        with self.remote.lock:
+            expired = time.monotonic() - self.remote.last_seen > 15
+        if self.remote_active and expired:
+            self._set_remote_output(False)
         return GLib.SOURCE_CONTINUE
 
     def submit_translation(self, config, image, credentials=None):
         heading = f"{datetime.now().astimezone():%H:%M:%S} · {config.provider} · {config.source_lang} → {config.target_lang}"
         entry = DisplayEntry(heading, "…")
-        if self.phone_active and not self.persistent:
+        if self.remote_active and not self.persistent:
             self.entries = []
         self.entries.append(entry)
         self.entries = self.entries[-DISPLAY_LIMIT:]
@@ -993,7 +993,7 @@ class OverlayWindow(Gtk.ApplicationWindow):
                 self._queue_scroll_latest()
 
     def _render_entries(self):
-        self._publish_phone()
+        self._publish_remote()
         adjustment = self.scroll.get_vadjustment()
         follow = self.scroll_source is not None or (
             adjustment.get_value() + adjustment.get_page_size() >= adjustment.get_upper() - 5)
@@ -1089,14 +1089,14 @@ class OverlayWindow(Gtk.ApplicationWindow):
             return
         self.closed = True
         self._close_pairing()
-        if self.phone_source is not None:
-            GLib.source_remove(self.phone_source)
-            self.phone_source = None
-        if self.phone is not None:
-            self.phone.close(reason)
-            self.phone = None
-        if self.phone_held:
-            self.phone_held = False
+        if self.remote_source is not None:
+            GLib.source_remove(self.remote_source)
+            self.remote_source = None
+        if self.remote is not None:
+            self.remote.close(reason)
+            self.remote = None
+        if self.remote_held:
+            self.remote_held = False
             self.app.release()
         self.capture_cancelled.set()
         for future in list(self.capture_jobs):
@@ -1165,14 +1165,14 @@ def _run_gui_translation(request: dict, *, on_ready=None) -> int:
                     print_error(command, f"Warning: {result.warning}\n")
                 target.submit_translation(current, image, request["credentials"])
                 image = None  # The translation worker owns this image now.
-                if not target.get_visible() and not target.phone_active and target.phone_pairing is None:
+                if not target.get_visible() and not target.remote_active and target.remote_pairing is None:
                     target.present()
         except (CancelledError, CaptureCancelled):
             pass
         except Exception as exc:  # noqa: BLE001 - Return failures to the requesting CLI.
             status = 1
             print_error(command, f"Error: {exc}\n")
-            if not target.closed and not target.entries and not target.capture_jobs and target.phone is None:
+            if not target.closed and not target.entries and not target.capture_jobs and target.remote is None:
                 target.dismiss()
         finally:
             if image is not None:
@@ -1245,16 +1245,16 @@ def _run_gui_translation(request: dict, *, on_ready=None) -> int:
             if window is not None and window.closed:
                 window = None
             if window is not None:
-                window.config = replace(window.config, phone_bottom_spacing_percent=current.phone_bottom_spacing_percent)
-                window._publish_phone()
-            if request["mode"] == "phone":
+                window.config = replace(window.config, remote_bottom_spacing_percent=current.remote_bottom_spacing_percent)
+                window._publish_remote()
+            if request["mode"] == "remote":
                 if window is None:
                     window = OverlayWindow(application, current, "empty")
-                port = request.get("phone_port")
-                if port is not None and window.phone is not None and window.phone.http.server_port != port:
-                    raise RuntimeError(f"This session is listening on TCP {window.phone.http.server_port}; end the session before changing ports.")
-                window.phone_port = port
-                status = 0 if window._pair_phone() else 1
+                port = request.get("remote_port")
+                if port is not None and window.remote is not None and window.remote.http.server_port != port:
+                    raise RuntimeError(f"This session is listening on TCP {window.remote.http.server_port}; end the session before changing ports.")
+                window.remote_port = port
+                status = 0 if window._pair_remote() else 1
                 command.set_exit_status(status)
                 if not command.get_is_remote():
                     local_exit_status = status
@@ -1262,7 +1262,7 @@ def _run_gui_translation(request: dict, *, on_ready=None) -> int:
             append = requested if requested is not None else (
                 window.persistent if window is not None else request["config"]["persistent_window"])
             # Decide whether to close before selecting or capturing any region.
-            if window is not None and (request["mode"] == "last" or (not append and not window.phone_active and window.phone_pairing is None)):
+            if window is not None and (request["mode"] == "last" or (not append and not window.remote_active and window.remote_pairing is None)):
                 window.dismiss("history toggle" if request["mode"] == "last" else "translation toggle")
                 return 0
             if request["mode"] != "last":
@@ -1278,7 +1278,7 @@ def _run_gui_translation(request: dict, *, on_ready=None) -> int:
                     window.present()
             elif append:
                 window.enable_persistent()
-            elif window.phone_active:
+            elif window.remote_active:
                 window.disable_persistent()
             if request["mode"] != "last":
                 # A separate worker captures every request before queued OCR work.
@@ -1302,7 +1302,7 @@ def _run_gui_translation(request: dict, *, on_ready=None) -> int:
             print_error(command, message)
             if window is None:
                 application.quit()
-            elif not window.get_visible() and not window.entries and not window.capture_jobs and window.phone is None:
+            elif not window.get_visible() and not window.entries and not window.capture_jobs and window.remote is None:
                 window.dismiss()
             command.set_exit_status(1)
             if not command.get_is_remote():

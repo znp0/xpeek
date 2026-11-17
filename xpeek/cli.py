@@ -4,7 +4,7 @@ Commands:
     xpeek select          -- interactively pick and save a screen region
     xpeek translate       -- capture saved region -> OCR -> translate -> print
     xpeek ocr             -- select temporary region -> OCR -> copy or translate
-    xpeek phone           -- pair a phone without opening a translation popup
+    xpeek remote          -- pair a remote browser without opening a translation popup
     xpeek show-history    -- show latest 10 translations in a popup
     xpeek reset-size      -- restore default popup sizes, keeping placement
     xpeek history         -- print translation history in the terminal
@@ -137,17 +137,17 @@ def _ocr_to_clipboard(config: Config, region: Region) -> int:
     return 0
 
 
-def cmd_phone(args: argparse.Namespace) -> int:
+def cmd_remote(args: argparse.Namespace) -> int:
     config = Config.load()
     try:
         from .gui_process import run_gui_translation
-        return run_gui_translation(config, mode="phone", phone_port=args.port)
+        return run_gui_translation(config, mode="remote", remote_port=args.port)
     except ImportError as exc:
         print(f"Error loading GUI: {exc}", file=sys.stderr)
         return 1
 
 
-def _phone_port(value: str) -> int:
+def _remote_port(value: str) -> int:
     port = _positive_int(value)
     if port > 65535:
         raise argparse.ArgumentTypeError("port must be from 1 to 65535")
@@ -328,8 +328,8 @@ def build_parser() -> argparse.ArgumentParser:
             "By default, an existing popup closes and the invocation exits.\n"
             "With --persistent, append results to a taller popup keeping the latest 10.\n"
             "Further calls reuse its mode; --no-persistent closes an existing desktop popup.\n"
-            "Use the title-bar phone button to pair a local phone browser.\n"
-            "While phone output is active, every invocation translates instead of toggling.\n"
+            "Use the title-bar remote button to pair another browser.\n"
+            "While remote output is active, every invocation translates instead of toggling.\n"
             "After closing, models stay loaded for ocr_keepalive_seconds (default: 60).\n"
             "Clipboard mode copies the OCR text and runs independently.\n\n"
             "Language codes depend on the provider. Language flags affect translation\n"
@@ -367,11 +367,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Default: copy its OCR text to the clipboard using wl-copy.\n"
             "With a translation provider, show the translation in an overlay.\n"
             "If a window already exists, a translation request closes it and exits\n"
-            "without selecting a region, unless persistent or showing on the phone.\n"
+            "without selecting a region, unless persistent or showing in a remote browser.\n"
             "--persistent appends to a taller popup keeping the latest 10 translations.\n"
             "Further calls reuse its mode; --no-persistent restores desktop close behavior.\n"
-            "Use the title-bar phone button to pair a local phone browser.\n"
-            "While phone output is active, every translation invocation translates.\n"
+            "Use the title-bar remote button to pair another browser.\n"
+            "While remote output is active, every translation invocation translates.\n"
             "After closing, models stay loaded for ocr_keepalive_seconds (default: 60).\n"
             "Clipboard mode runs independently and ignores persistence flags.\n\n"
             "Language flags affect translation only, not OCR recognition."
@@ -394,12 +394,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ocr.set_defaults(func=cmd_ocr)
 
-    p_phone = subparsers.add_parser(
-        "phone", help="Open phone pairing without opening a translation popup",
-        description="Open the address or scan the QR on a phone on the same local network, then approve the matching code on the desktop. No capture or translation runs. The default TCP port is 38853. The command exits when the background viewer is ready or startup fails; closing the terminal does not stop it. Keep the pairing window open until the phone connects.",
+    p_remote = subparsers.add_parser(
+        "remote", help="Open remote browser pairing without a translation popup",
+        description="Open the address in a browser on another device on the same local network, or scan the QR, then approve the matching code on the desktop. No capture or translation runs. The default TCP port is 38853. The command exits when the background viewer is ready or startup fails; closing the terminal does not stop it. Keep the pairing window open until the browser connects.",
     )
-    p_phone.add_argument("--port", type=_phone_port, default=None, help="TCP listening port (default: 38853); close the current session before changing it")
-    p_phone.set_defaults(func=cmd_phone)
+    p_remote.add_argument("--port", type=_remote_port, default=None, help="TCP listening port (default: 38853); close the current session before changing it")
+    p_remote.set_defaults(func=cmd_remote)
 
     p_show_history = subparsers.add_parser(
         "show-history", help="Show recent translations in a popup (default: latest 10)",

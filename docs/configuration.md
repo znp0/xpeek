@@ -4,14 +4,14 @@ Setup creates `$XDG_CONFIG_HOME/xpeek/config.json` (default `~/.config/xpeek/con
 
 Setup adds or refreshes `$schema` to reference the GitHub-hosted [config.schema.json](../config.schema.json) at the installed version's release tag, preserving all other settings. The development example references `main`. For offline editing, set `$schema` to the local schema's absolute path instead; the next install replaces it with the version-specific URL. The field is optional editor metadata; xpeek ignores it and does not fetch or validate against the schema at runtime.
 
-New configs use Google, `source_lang: "auto"`, `target_lang: "en"`, `persistent_window: false`, `phone_bottom_spacing_percent: 30`, `ocr_keepalive_seconds: 60`, `history_limit: 100`, and empty `provider_options` / `ocr_options`. Omitted engine options use desktop capture. The initial `ocr_engine` is chosen among installed engines in this order: Paddle tiny, RapidOCR, Paddle small. Setup preserves existing config, including its engine choice.
+New configs use Google, `source_lang: "auto"`, `target_lang: "en"`, `persistent_window: false`, `remote_bottom_spacing_percent: 30`, `ocr_keepalive_seconds: 60`, `history_limit: 100`, and empty `provider_options` / `ocr_options`. Omitted engine options use desktop capture. The initial `ocr_engine` is chosen among installed engines in this order: Paddle tiny, RapidOCR, Paddle small. Setup preserves existing config, including its engine choice.
 
 | Setting | Purpose |
 | --- | --- |
 | `provider` | `google`, `deepl`, `openai`, `gemini`, or `ollama` |
 | `source_lang` / `target_lang` | Translation languages; `auto` source requests detection |
 | `persistent_window` | Start new popups in append mode |
-| `phone_bottom_spacing_percent` | Blank space below phone translations as a percentage of visible screen height; number 0–100, default 30, 0 disables extra spacing |
+| `remote_bottom_spacing_percent` | Blank space below remote browser translations as a percentage of visible screen height; number 0–100, default 30, 0 disables extra spacing |
 | `ocr_keepalive_seconds` | Idle seconds to retain loaded models after closing a popup; default 60, integer 0–4294967, 0 disables retention |
 | `history_limit` | Maximum saved history entries |
 | `ocr_engine` | Installed OCR engine; see the [OCR guide](ocr.md) |
@@ -54,4 +54,4 @@ The example config lists supported provider settings with empty `api_key` values
 
 The saved region lives in `$XDG_STATE_HOME/xpeek/region.json` and popup geometry in `window-state.json` beside it (default `~/.local/state/xpeek/`). History lives in `$XDG_DATA_HOME/xpeek/history.json` (default `~/.local/share/xpeek/history.json`). Regions and geometry do not belong in config. Install preserves all these files; uninstall keeps them by default and always preserves history.
 
-For more breathing room below phone translations, set `"phone_bottom_spacing_percent": 40`. Use `0` for no extra spacing. Changes apply on the next GUI command, such as `xpeek phone`, and update the connected browser without reloading it. Omitted values keep the default 30%; existing configuration is not rewritten.
+For more breathing room below remote browser translations, set `"remote_bottom_spacing_percent": 40`. Use `0` for no extra spacing. Changes apply on the next GUI command, such as `xpeek remote`, and update the connected browser without reloading it. Omitted values keep the default 30%; existing configuration is not rewritten.

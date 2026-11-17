@@ -1,4 +1,4 @@
-"""Session-scoped local phone viewer; HTTP threads never access GTK objects."""
+"""Session-scoped remote browser viewer; HTTP threads never access GTK objects."""
 from __future__ import annotations
 
 import fcntl
@@ -17,10 +17,10 @@ from threading import Condition, Lock, Thread
 DEFAULT_PORT = 38853
 
 
-def phone_notice(message):
-    logging.getLogger("xpeek.phone").info("xpeek phone [%s]: %s", os.getpid(), message)
+def remote_notice(message):
+    logging.getLogger("xpeek.remote").info("xpeek remote [%s]: %s", os.getpid(), message)
     try:
-        os.write(2, f"xpeek phone [{os.getpid()}]: {message}\n".encode())
+        os.write(2, f"xpeek remote [{os.getpid()}]: {message}\n".encode())
     except OSError:
         pass
 
@@ -43,7 +43,7 @@ async function request(path){
  if(!r.ok)throw Error('Session unavailable');return r;
 }
 function render(state){
- status.textContent=state.phone?'Showing translations here':'Desktop active · use its phone button to transfer';
+ status.textContent=state.remote?'Showing translations here':'Desktop active · use its remote button to transfer';
  const content=JSON.stringify([state.entries,state.bottom_spacing_percent]);if(content===previous)return;
  const follow=window.scrollY+innerHeight>=document.documentElement.scrollHeight-30, oldY=window.scrollY;
  main.style.setProperty('--bottom-spacing-percent',state.bottom_spacing_percent??30);
@@ -173,7 +173,7 @@ def client_label(user_agent: str) -> str:
     return f"{browser} on {platform}" if platform else browser
 
 
-class PhoneServer:
+class RemoteServer:
     def __init__(self, port: int = DEFAULT_PORT):
         self._tokens = set()
         self._pairings = {}
@@ -182,7 +182,7 @@ class PhoneServer:
         self.revision = 0
         self.actions = SimpleQueue()
         self.last_seen = 0.0
-        self.snapshot = {"phone": False, "entries": []}
+        self.snapshot = {"remote": False, "entries": []}
         self.closed = False
         owner = self
 
@@ -308,7 +308,7 @@ class PhoneServer:
         self.http.daemon_threads = True
         self.thread = Thread(target=self.http.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True)
         self.thread.start()
-        phone_notice(f"listening on TCP {self.http.server_port}")
+        remote_notice(f"listening on TCP {self.http.server_port}")
 
     def _expire_pairings(self):
         now = time.monotonic()
@@ -401,4 +401,4 @@ class PhoneServer:
         self.http.shutdown()
         self.http.server_close()
         self.thread.join(timeout=1)
-        phone_notice(f"stopped TCP {self.http.server_port}: {reason}")
+        remote_notice(f"stopped TCP {self.http.server_port}: {reason}")

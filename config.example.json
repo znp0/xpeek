@@ -5,7 +5,7 @@
   "source_lang": "auto",
   "target_lang": "en",
   "persistent_window": false,
-  "phone_bottom_spacing_percent": 30,
+  "remote_bottom_spacing_percent": 30,
   "ocr_keepalive_seconds": 60,
   "ocr_engine": "paddleocr-tiny",
   "ocr_options": {

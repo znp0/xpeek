@@ -41,12 +41,12 @@
       "default": false,
       "description": "Start new popups in append mode, retaining the latest 10 translations with scrolling."
     },
-    "phone_bottom_spacing_percent": {
+    "remote_bottom_spacing_percent": {
       "type": "number",
       "minimum": 0,
       "maximum": 100,
       "default": 30,
-      "description": "Blank space below phone translations as a percentage of the visible browser viewport height. Zero disables extra spacing."
+      "description": "Blank space below remote browser translations as a percentage of the visible browser viewport height. Zero disables extra spacing."
     },
     "ocr_keepalive_seconds": {
       "type": "integer",

@@ -23,11 +23,11 @@ if TYPE_CHECKING:
 def run_gui_translation(
     config: Config, mode: str = "translate", *, persistent: bool | None = None,
     region: Region | None = None, temporary: bool = False, display_limit: int = 10,
-    phone_port: int | None = None,
+    remote_port: int | None = None,
 ) -> int:
     request = {"config": asdict(config), "mode": mode, "persistent": persistent,
                "region": asdict(region) if region is not None else None,
-               "temporary": temporary, "display_limit": display_limit, "phone_port": phone_port,
+               "temporary": temporary, "display_limit": display_limit, "remote_port": remote_port,
                "gamescope_display": os.environ.get("GAMESCOPE_WAYLAND_DISPLAY"),
                "credentials": {name: os.environ.get(name) for name in API_KEY_ENV.values()}}
     return launch(request)
@@ -51,7 +51,7 @@ def launch(request: dict) -> int:
             try:
                 process.stdin.write(json.dumps(request).encode())
                 process.stdin.close()
-                deadline = time.monotonic() + 20 if request["mode"] == "phone" else None
+                deadline = time.monotonic() + 20 if request["mode"] == "remote" else None
                 while True:
                     remaining = None if deadline is None else max(0, deadline - time.monotonic())
                     readable, _, _ = select.select([ready_read], [], [], remaining)
@@ -62,7 +62,7 @@ def launch(request: dict) -> int:
                         except subprocess.TimeoutExpired:
                             process.kill()
                             process.wait()
-                        print("Cannot start phone pairing: the popup did not respond within 20 seconds.", file=sys.stderr)
+                        print("Cannot start remote pairing: the popup did not respond within 20 seconds.", file=sys.stderr)
                         return 1
                     result = os.read(ready_read, 32)
                     status = int(result.strip()) if result.strip() in (b"0", b"1") else 1
@@ -97,7 +97,7 @@ def _configure_notices():
     path = directory / "popup.log"
     handler = _PrivateRotatingHandler(path, maxBytes=65536, backupCount=1)
     handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
-    logger = logging.getLogger("xpeek.phone")
+    logger = logging.getLogger("xpeek.remote")
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     logger.propagate = False
